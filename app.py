@@ -67,6 +67,9 @@ def init_db():
     ''')
     db.commit()
 
+init_db()
+
+
 # ---------- RUTAS ----------
 
 @app.route('/')
@@ -239,6 +242,5 @@ def sugerencias():
     return render_template('sugerencias.html', data=data)
 
 if __name__ == '__main__':
-    init_db()
     app.run()
 
