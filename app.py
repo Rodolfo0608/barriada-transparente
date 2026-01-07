@@ -1,12 +1,20 @@
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, send_from_directory
+
 import sqlite3
 import os
 from werkzeug.utils import secure_filename
 from datetime import datetime
 
 app = Flask(__name__)
-DB = 'barriada.db'
-UPLOAD_FOLDER = 'static/uploads'
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+if os.environ.get("RENDER"):
+    DB = "/tmp/barriada.db"
+    UPLOAD_FOLDER = "/tmp/uploads"
+else:
+    DB = os.path.join(BASE_DIR, "barriada.db")
+    UPLOAD_FOLDER = os.path.join(BASE_DIR, "static/uploads")
+
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
@@ -72,6 +80,10 @@ init_db()
 
 # ---------- RUTAS ----------
 
+@app.route('/uploads/<filename>')
+def uploads(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -101,7 +113,7 @@ def admin_minuta():
         """, (
             titulo,
             resumen,
-            f"/static/uploads/{filename}" if filename else None,
+            f"/uploads/{filename}" if filename else None,
             datetime.now().strftime('%Y-%m-%d')
         ))
         db.commit()
