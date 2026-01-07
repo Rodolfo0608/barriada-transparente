@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Estado de Cuenta</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="container mt-4">
+
+<h3>💰 Estado de Cuenta</h3>
+
+<div class="row text-center mb-4">
+    <div class="col">
+        <div class="alert alert-success">
+            Ingresos<br><strong>${{ ingresos }}</strong>
+        </div>
+    </div>
+    <div class="col">
+        <div class="alert alert-danger">
+            Gastos<br><strong>${{ gastos_total }}</strong>
+        </div>
+    </div>
+    <div class="col">
+        <div class="alert alert-info">
+            Disponible<br><strong>${{ disponible }}</strong>
+        </div>
+    </div>
+</div>
+
+<hr>
+
+<h5>🏠 Aportes por Casa</h5>
+<table class="table table-bordered">
+    <tr>
+        <th>Casa</th>
+        <th>Monto</th>
+        <th>Fecha</th>
+        <th>Comprobante</th>
+    </tr>
+    {% for p in pagos %}
+    <tr>
+        <td>{{ p['casa'] }}</td>
+        <td>${{ p['monto'] }}</td>
+        <td>{{ p['fecha'] }}</td>
+        <td>
+            {% if p['comprobante'] %}
+            <a href="{{ p['comprobante'] }}" target="_blank">Ver</a>
+            {% else %}—{% endif %}
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+
+<hr>
+
+<h5>🧾 Gastos Ejecutados</h5>
+<table class="table table-bordered">
+    <tr>
+        <th>Descripción</th>
+        <th>Monto</th>
+        <th>Fecha</th>
+        <th>Factura</th>
+    </tr>
+    {% for g in gastos %}
+    <tr>
+        <td>{{ g['descripcion'] }}</td>
+        <td>${{ g['monto'] }}</td>
+        <td>{{ g['fecha'] }}</td>
+        <td>
+            {% if g['factura'] %}
+            <a href="{{ g['factura'] }}" target="_blank">Ver</a>
+            {% else %}—{% endif %}
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+
+<a href="/" class="btn btn-secondary">Volver</a>
+
+</body>
+</html>

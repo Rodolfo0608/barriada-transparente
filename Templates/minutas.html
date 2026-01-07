@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Minutas</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+
+<div class="container mt-4">
+    <h3>📄 Minutas de Reuniones</h3>
+    <table class="table table-bordered table-striped mt-3">
+        <thead class="table-primary">
+            <tr>
+                <th>Fecha</th>
+                <th>Título</th>
+                <th>Resumen</th>
+                <th>Documento</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for m in data %}
+            <tr>
+                <td>{{ m['fecha'] }}</td>
+                <td>{{ m['titulo'] }}</td>
+                <td>{{ m['resumen'] }}</td>
+                <td>
+                    {% if m['archivo'] %}
+                        <a href="{{ m['archivo'] }}" target="_blank">Ver PDF</a>
+                    {% else %}
+                        —
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <a href="/" class="btn btn-secondary">Volver</a>
+</div>
+
+</body>
+</html>
