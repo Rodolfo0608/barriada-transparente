@@ -1,13 +1,16 @@
 from flask import (
     Flask, render_template, request,
-    redirect, url_for, send_from_directory, session
+    redirect, url_for, session
 )
 import psycopg2
 import psycopg2.extras
 import os
-from werkzeug.utils import secure_filename
 from datetime import datetime
 from functools import wraps
+
+# Cloudinary
+import cloudinary
+import cloudinary.uploader
 
 # ==========================================================
 # CONFIGURACIÓN GENERAL
@@ -16,16 +19,21 @@ from functools import wraps
 app = Flask(__name__)
 app.secret_key = 'barriada-segura'
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-UPLOAD_FOLDER = "/tmp/uploads"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 # ==========================================================
-# CONTEXTO GLOBAL PARA TEMPLATES (FIX LOGIN ERROR)
+# CLOUDINARY CONFIG
+# ==========================================================
+
+cloudinary.config(
+    cloud_name=os.environ.get("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.environ.get("CLOUDINARY_API_KEY"),
+    api_secret=os.environ.get("CLOUDINARY_API_SECRET"),
+    secure=True
+)
+
+# ==========================================================
+# CONTEXTO GLOBAL PARA TEMPLATES
 # ==========================================================
 
 @app.context_processor
@@ -133,14 +141,6 @@ def admin_required(f):
     return wrapper
 
 # ==========================================================
-# ARCHIVOS
-# ==========================================================
-
-@app.route('/uploads/<filename>')
-def uploads(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
-
-# ==========================================================
 # RUTAS PÚBLICAS
 # ==========================================================
 
@@ -160,16 +160,28 @@ def minutas():
 
 @app.route('/estado-cuenta')
 def estado_cuenta():
+    casa = request.args.get('casa')
+
     cur, conn = get_cursor()
 
-    cur.execute("SELECT * FROM pagos ORDER BY fecha DESC")
+    if casa:
+        cur.execute(
+            "SELECT * FROM pagos WHERE casa=%s ORDER BY fecha DESC",
+            (casa,)
+        )
+        cur.execute(
+            "SELECT COALESCE(SUM(monto),0) total FROM pagos WHERE casa=%s",
+            (casa,)
+        )
+    else:
+        cur.execute("SELECT * FROM pagos ORDER BY fecha DESC")
+        cur.execute("SELECT COALESCE(SUM(monto),0) total FROM pagos")
+
     pagos = cur.fetchall()
+    ingresos = cur.fetchone()['total']
 
     cur.execute("SELECT * FROM gastos ORDER BY fecha DESC")
     gastos = cur.fetchall()
-
-    cur.execute("SELECT COALESCE(SUM(monto),0) total FROM pagos")
-    ingresos = cur.fetchone()['total']
 
     cur.execute("SELECT COALESCE(SUM(monto),0) total FROM gastos")
     egresos = cur.fetchone()['total']
@@ -182,9 +194,13 @@ def estado_cuenta():
         gastos=gastos,
         ingresos=ingresos,
         gastos_total=egresos,
-        disponible=ingresos - egresos
+        disponible=ingresos - egresos,
+        casa=casa
     )
 
+# ==========================================================
+# PAGO (CARGA LIBRE)
+# ==========================================================
 
 @app.route('/pago', methods=['GET', 'POST'])
 def pago():
@@ -193,10 +209,14 @@ def pago():
         monto = request.form['monto']
         archivo = request.files['comprobante']
 
-        filename = None
+        url = None
         if archivo and archivo.filename:
-            filename = secure_filename(archivo.filename)
-            archivo.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            result = cloudinary.uploader.upload(
+                archivo,
+                resource_type="auto",
+                folder="barriada/pagos"
+            )
+            url = result["secure_url"]
 
         cur, conn = get_cursor()
         cur.execute("""
@@ -206,7 +226,7 @@ def pago():
             casa,
             monto,
             datetime.now().date(),
-            f"/uploads/{filename}" if filename else None
+            url
         ))
         conn.commit()
         conn.close()
@@ -214,44 +234,6 @@ def pago():
         return redirect('/estado-cuenta')
 
     return render_template('admin_pago.html')
-
-
-@app.route('/requerimientos')
-def requerimientos():
-    cur, conn = get_cursor()
-    cur.execute("SELECT * FROM requerimientos ORDER BY prioridad")
-    data = cur.fetchall()
-    conn.close()
-    return render_template('requerimientos.html', data=data)
-
-
-@app.route('/comite')
-def comite():
-    cur, conn = get_cursor()
-    cur.execute("SELECT * FROM comite")
-    data = cur.fetchall()
-    conn.close()
-    return render_template('comite.html', data=data)
-
-
-@app.route('/sugerencias', methods=['GET', 'POST'])
-def sugerencias():
-    cur, conn = get_cursor()
-
-    if request.method == 'POST':
-        texto = request.form['texto']
-        cur.execute(
-            "INSERT INTO sugerencias (texto, fecha) VALUES (%s, %s)",
-            (texto, datetime.now())
-        )
-        conn.commit()
-        conn.close()
-        return redirect('/sugerencias')
-
-    cur.execute("SELECT * FROM sugerencias ORDER BY fecha DESC")
-    data = cur.fetchall()
-    conn.close()
-    return render_template('sugerencias.html', data=data)
 
 # ==========================================================
 # ADMINISTRACIÓN
@@ -265,10 +247,14 @@ def admin_minuta():
         resumen = request.form['resumen']
         archivo = request.files['archivo']
 
-        filename = None
+        url = None
         if archivo and archivo.filename:
-            filename = secure_filename(archivo.filename)
-            archivo.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            result = cloudinary.uploader.upload(
+                archivo,
+                resource_type="auto",
+                folder="barriada/minutas"
+            )
+            url = result["secure_url"]
 
         cur, conn = get_cursor()
         cur.execute("""
@@ -277,7 +263,7 @@ def admin_minuta():
         """, (
             titulo,
             resumen,
-            f"/uploads/{filename}" if filename else None,
+            url,
             datetime.now().date()
         ))
         conn.commit()
@@ -296,10 +282,14 @@ def admin_gasto():
         monto = request.form['monto']
         archivo = request.files['factura']
 
-        filename = None
+        url = None
         if archivo and archivo.filename:
-            filename = secure_filename(archivo.filename)
-            archivo.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            result = cloudinary.uploader.upload(
+                archivo,
+                resource_type="auto",
+                folder="barriada/gastos"
+            )
+            url = result["secure_url"]
 
         cur, conn = get_cursor()
         cur.execute("""
@@ -309,7 +299,7 @@ def admin_gasto():
             descripcion,
             monto,
             datetime.now().date(),
-            f"/uploads/{filename}" if filename else None
+            url
         ))
         conn.commit()
         conn.close()
@@ -328,10 +318,14 @@ def admin_comite():
         casa = request.form['casa']
         archivo = request.files['foto']
 
-        filename = None
+        url = None
         if archivo and archivo.filename:
-            filename = secure_filename(archivo.filename)
-            archivo.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            result = cloudinary.uploader.upload(
+                archivo,
+                resource_type="image",
+                folder="barriada/comite"
+            )
+            url = result["secure_url"]
 
         cur, conn = get_cursor()
         cur.execute("""
@@ -341,7 +335,7 @@ def admin_comite():
             nombre,
             cargo,
             casa,
-            f"/uploads/{filename}" if filename else None
+            url
         ))
         conn.commit()
         conn.close()
