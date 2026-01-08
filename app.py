@@ -224,6 +224,29 @@ def requerimientos():
     data = cur.fetchall()
     conn.close()
     return render_template('requerimientos.html', data=data)
+    
+@app.route('/sugerencias', methods=['GET', 'POST'])
+def sugerencias():
+    cur, conn = get_cursor()
+
+    if request.method == 'POST':
+        texto = request.form.get('texto')
+
+        if texto:
+            cur.execute(
+                "INSERT INTO sugerencias (texto, fecha) VALUES (%s, %s)",
+                (texto, datetime.now())
+            )
+            conn.commit()
+
+        conn.close()
+        return redirect('/sugerencias')
+
+    cur.execute("SELECT * FROM sugerencias ORDER BY fecha DESC")
+    data = cur.fetchall()
+    conn.close()
+
+    return render_template('sugerencias.html', data=data)
 
 @app.route('/estado-cuenta/excel')
 def estado_cuenta_excel():
