@@ -1,6 +1,6 @@
 from flask import (
     Flask, render_template, request,
-    redirect, url_for, session, Response
+    redirect, session, Response
 )
 from openpyxl import Workbook
 import io
@@ -168,30 +168,18 @@ def estado_cuenta():
 
     # PAGOS
     if casa:
-        cur.execute(
-            "SELECT * FROM pagos WHERE casa=%s ORDER BY fecha DESC",
-            (casa,)
-        )
+        cur.execute("SELECT * FROM pagos WHERE casa=%s ORDER BY fecha DESC", (casa,))
+        cur.execute("SELECT COALESCE(SUM(monto),0) total FROM pagos WHERE casa=%s", (casa,))
     else:
         cur.execute("SELECT * FROM pagos ORDER BY fecha DESC")
-
-    pagos = cur.fetchall()
-
-    # INGRESOS
-    if casa:
-        cur.execute(
-            "SELECT COALESCE(SUM(monto),0) total FROM pagos WHERE casa=%s",
-            (casa,)
-        )
-    else:
         cur.execute("SELECT COALESCE(SUM(monto),0) total FROM pagos")
 
+    pagos = cur.fetchall()
     ingresos = cur.fetchone()['total']
 
     # GASTOS (siempre globales)
     cur.execute("SELECT * FROM gastos ORDER BY fecha DESC")
     gastos = cur.fetchall()
-
     cur.execute("SELECT COALESCE(SUM(monto),0) total FROM gastos")
     egresos = cur.fetchone()['total']
 
@@ -207,50 +195,35 @@ def estado_cuenta():
         casa=casa
     )
 
+
 @app.route('/estado-cuenta/excel')
 def estado_cuenta_excel():
     casa = request.args.get('casa')
-
     cur, conn = get_cursor()
 
     if casa:
-        cur.execute(
-            "SELECT * FROM pagos WHERE casa=%s ORDER BY fecha DESC",
-            (casa,)
-        )
+        cur.execute("SELECT * FROM pagos WHERE casa=%s ORDER BY fecha DESC", (casa,))
     else:
         cur.execute("SELECT * FROM pagos ORDER BY fecha DESC")
 
     pagos = cur.fetchall()
-
     cur.execute("SELECT * FROM gastos ORDER BY fecha DESC")
     gastos = cur.fetchall()
-
     conn.close()
 
-    # Crear Excel
     wb = Workbook()
-    ws_pagos = wb.active
-    ws_pagos.title = "Pagos"
+    ws = wb.active
+    ws.title = "Pagos"
+    ws.append(["Casa", "Monto", "Fecha", "Comprobante"])
 
-    ws_pagos.append(["Casa", "Monto", "Fecha", "Comprobante"])
     for p in pagos:
-        ws_pagos.append([
-            p['casa'],
-            float(p['monto']),
-            str(p['fecha']),
-            p['comprobante'] or ''
-        ])
+        ws.append([p['casa'], float(p['monto']), str(p['fecha']), p['comprobante'] or ""])
 
-    ws_gastos = wb.create_sheet("Gastos")
-    ws_gastos.append(["Descripción", "Monto", "Fecha", "Factura"])
+    ws2 = wb.create_sheet("Gastos")
+    ws2.append(["Descripción", "Monto", "Fecha", "Factura"])
+
     for g in gastos:
-        ws_gastos.append([
-            g['descripcion'],
-            float(g['monto']),
-            str(g['fecha']),
-            g['factura'] or ''
-        ])
+        ws2.append([g['descripcion'], float(g['monto']), str(g['fecha']), g['factura'] or ""])
 
     output = io.BytesIO()
     wb.save(output)
@@ -261,17 +234,16 @@ def estado_cuenta_excel():
     return Response(
         output,
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={
-            "Content-Disposition": f"attachment; filename={nombre}"
-        }
+        headers={"Content-Disposition": f"attachment; filename={nombre}"}
     )
 
 # ==========================================================
-# PAGO (CARGA LIBRE)
+# 🔐 PAGO – SOLO ADMIN (CAMBIO CLAVE)
 # ==========================================================
 
-@app.route('/pago', methods=['GET', 'POST'])
-def pago():
+@app.route('/admin/pago', methods=['GET', 'POST'])
+@admin_required
+def admin_pago():
     if request.method == 'POST':
         casa = request.form['casa']
         monto = request.form['monto']
@@ -290,12 +262,7 @@ def pago():
         cur.execute("""
             INSERT INTO pagos (casa, monto, fecha, comprobante)
             VALUES (%s, %s, %s, %s)
-        """, (
-            casa,
-            monto,
-            datetime.now().date(),
-            url
-        ))
+        """, (casa, monto, datetime.now().date(), url))
         conn.commit()
         conn.close()
 
@@ -317,23 +284,17 @@ def admin_minuta():
 
         url = None
         if archivo and archivo.filename:
-            result = cloudinary.uploader.upload(
+            url = cloudinary.uploader.upload(
                 archivo,
                 resource_type="auto",
                 folder="barriada/minutas"
-            )
-            url = result["secure_url"]
+            )["secure_url"]
 
         cur, conn = get_cursor()
         cur.execute("""
             INSERT INTO minutas (titulo, resumen, archivo, fecha)
             VALUES (%s, %s, %s, %s)
-        """, (
-            titulo,
-            resumen,
-            url,
-            datetime.now().date()
-        ))
+        """, (titulo, resumen, url, datetime.now().date()))
         conn.commit()
         conn.close()
 
@@ -352,23 +313,17 @@ def admin_gasto():
 
         url = None
         if archivo and archivo.filename:
-            result = cloudinary.uploader.upload(
+            url = cloudinary.uploader.upload(
                 archivo,
                 resource_type="auto",
                 folder="barriada/gastos"
-            )
-            url = result["secure_url"]
+            )["secure_url"]
 
         cur, conn = get_cursor()
         cur.execute("""
             INSERT INTO gastos (descripcion, monto, fecha, factura)
             VALUES (%s, %s, %s, %s)
-        """, (
-            descripcion,
-            monto,
-            datetime.now().date(),
-            url
-        ))
+        """, (descripcion, monto, datetime.now().date(), url))
         conn.commit()
         conn.close()
 
@@ -388,23 +343,17 @@ def admin_comite():
 
         url = None
         if archivo and archivo.filename:
-            result = cloudinary.uploader.upload(
+            url = cloudinary.uploader.upload(
                 archivo,
                 resource_type="image",
                 folder="barriada/comite"
-            )
-            url = result["secure_url"]
+            )["secure_url"]
 
         cur, conn = get_cursor()
         cur.execute("""
             INSERT INTO comite (nombre, cargo, casa, foto)
             VALUES (%s, %s, %s, %s)
-        """, (
-            nombre,
-            cargo,
-            casa,
-            url
-        ))
+        """, (nombre, cargo, casa, url))
         conn.commit()
         conn.close()
 
@@ -419,15 +368,11 @@ def admin_comite():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     error = None
-
     if request.method == 'POST':
-        user = request.form['usuario']
-        pwd = request.form['password']
-
         cur, conn = get_cursor()
         cur.execute(
             "SELECT * FROM usuarios WHERE usuario=%s AND password=%s",
-            (user, pwd)
+            (request.form['usuario'], request.form['password'])
         )
         u = cur.fetchone()
         conn.close()
@@ -447,7 +392,6 @@ def logout():
     session.clear()
     return redirect('/')
 
-# ==========================================================
 
 if __name__ == '__main__':
     app.run(debug=True)
