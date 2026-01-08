@@ -208,6 +208,12 @@ def estado_cuenta():
         casa=casa
     )
 
+@app.route('/comite')
+def comite():
+    db = get_db()
+    data = db.execute('SELECT * FROM comite').fetchall()
+    return render_template('comite.html', data=data)
+
 @app.route('/requerimientos')
 def requerimientos():
     cur, conn = get_cursor()
