@@ -18,7 +18,6 @@ app.secret_key = 'barriada-segura'
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Uploads (siguen siendo temporales, luego los movemos a storage)
 UPLOAD_FOLDER = "/tmp/uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
@@ -26,11 +25,19 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 # ==========================================================
+# CONTEXTO GLOBAL PARA TEMPLATES (FIX LOGIN ERROR)
+# ==========================================================
+
+@app.context_processor
+def inject_session():
+    return dict(session=session)
+
+# ==========================================================
 # BASE DE DATOS (POSTGRESQL)
 # ==========================================================
 
 def get_conn():
-    return psycopg2.connect(DATABASE_URL)
+    return psycopg2.connect(DATABASE_URL, sslmode='require')
 
 
 def get_cursor():
@@ -101,15 +108,12 @@ def init_db():
 def crear_admin_si_no_existe():
     cur, conn = get_cursor()
     cur.execute("SELECT 1 FROM usuarios WHERE rol='admin'")
-    existe = cur.fetchone()
-
-    if not existe:
+    if not cur.fetchone():
         cur.execute(
             "INSERT INTO usuarios (usuario, password, rol) VALUES (%s, %s, %s)",
             ("admin", "admin123", "admin")
         )
         conn.commit()
-
     conn.close()
 
 
@@ -164,11 +168,11 @@ def estado_cuenta():
     cur.execute("SELECT * FROM gastos ORDER BY fecha DESC")
     gastos = cur.fetchall()
 
-    cur.execute("SELECT COALESCE(SUM(monto),0) FROM pagos")
-    ingresos = cur.fetchone()['coalesce']
+    cur.execute("SELECT COALESCE(SUM(monto),0) total FROM pagos")
+    ingresos = cur.fetchone()['total']
 
-    cur.execute("SELECT COALESCE(SUM(monto),0) FROM gastos")
-    egresos = cur.fetchone()['coalesce']
+    cur.execute("SELECT COALESCE(SUM(monto),0) total FROM gastos")
+    egresos = cur.fetchone()['total']
 
     conn.close()
 
