@@ -10,31 +10,44 @@
 
 <h3>💰 Estado de Cuenta</h3>
 
-<!-- FILTRO POR CASA -->
-<form method="get" class="row g-2 mb-4">
-    <div class="col-md-4">
-        <input
-            type="text"
-            name="casa"
-            class="form-control"
-            placeholder="Filtrar por casa (Ej: A-12)"
-            value="{{ casa or '' }}"
-        >
-    </div>
-    <div class="col-md-2">
-        <button class="btn btn-primary w-100">
-            Filtrar
-        </button>
-    </div>
+<!-- FILTRO + EXPORTAR -->
+<div class="row align-items-end mb-4">
 
-    {% if casa %}
-    <div class="col-md-2">
-        <a href="/estado-cuenta" class="btn btn-secondary w-100">
-            Ver todo
+    <form method="get" class="col-md-8 row g-2">
+        <div class="col-md-6">
+            <input
+                type="text"
+                name="casa"
+                class="form-control"
+                placeholder="Filtrar por casa (Ej: A-12)"
+                value="{{ casa or '' }}"
+            >
+        </div>
+        <div class="col-md-3">
+            <button class="btn btn-primary w-100">
+                Filtrar
+            </button>
+        </div>
+
+        {% if casa %}
+        <div class="col-md-3">
+            <a href="/estado-cuenta" class="btn btn-secondary w-100">
+                Ver todo
+            </a>
+        </div>
+        {% endif %}
+    </form>
+
+    <!-- BOTÓN EXCEL -->
+    <div class="col-md-4 text-end">
+        <a
+          href="/estado-cuenta/excel{% if casa %}?casa={{ casa }}{% endif %}"
+          class="btn btn-success"
+        >
+            📥 Descargar Excel
         </a>
     </div>
-    {% endif %}
-</form>
+</div>
 
 {% if casa %}
 <div class="alert alert-warning">

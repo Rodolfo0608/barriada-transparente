@@ -1,7 +1,9 @@
 from flask import (
     Flask, render_template, request,
-    redirect, url_for, session
+    redirect, url_for, session, Response
 )
+from openpyxl import Workbook
+import io
 import psycopg2
 import psycopg2.extras
 import os
@@ -164,22 +166,29 @@ def estado_cuenta():
 
     cur, conn = get_cursor()
 
+    # PAGOS
     if casa:
         cur.execute(
             "SELECT * FROM pagos WHERE casa=%s ORDER BY fecha DESC",
             (casa,)
         )
+    else:
+        cur.execute("SELECT * FROM pagos ORDER BY fecha DESC")
+
+    pagos = cur.fetchall()
+
+    # INGRESOS
+    if casa:
         cur.execute(
             "SELECT COALESCE(SUM(monto),0) total FROM pagos WHERE casa=%s",
             (casa,)
         )
     else:
-        cur.execute("SELECT * FROM pagos ORDER BY fecha DESC")
         cur.execute("SELECT COALESCE(SUM(monto),0) total FROM pagos")
 
-    pagos = cur.fetchall()
     ingresos = cur.fetchone()['total']
 
+    # GASTOS (siempre globales)
     cur.execute("SELECT * FROM gastos ORDER BY fecha DESC")
     gastos = cur.fetchall()
 
@@ -196,6 +205,65 @@ def estado_cuenta():
         gastos_total=egresos,
         disponible=ingresos - egresos,
         casa=casa
+    )
+
+@app.route('/estado-cuenta/excel')
+def estado_cuenta_excel():
+    casa = request.args.get('casa')
+
+    cur, conn = get_cursor()
+
+    if casa:
+        cur.execute(
+            "SELECT * FROM pagos WHERE casa=%s ORDER BY fecha DESC",
+            (casa,)
+        )
+    else:
+        cur.execute("SELECT * FROM pagos ORDER BY fecha DESC")
+
+    pagos = cur.fetchall()
+
+    cur.execute("SELECT * FROM gastos ORDER BY fecha DESC")
+    gastos = cur.fetchall()
+
+    conn.close()
+
+    # Crear Excel
+    wb = Workbook()
+    ws_pagos = wb.active
+    ws_pagos.title = "Pagos"
+
+    ws_pagos.append(["Casa", "Monto", "Fecha", "Comprobante"])
+    for p in pagos:
+        ws_pagos.append([
+            p['casa'],
+            float(p['monto']),
+            str(p['fecha']),
+            p['comprobante'] or ''
+        ])
+
+    ws_gastos = wb.create_sheet("Gastos")
+    ws_gastos.append(["Descripción", "Monto", "Fecha", "Factura"])
+    for g in gastos:
+        ws_gastos.append([
+            g['descripcion'],
+            float(g['monto']),
+            str(g['fecha']),
+            g['factura'] or ''
+        ])
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    nombre = f"estado_cuenta_{casa}.xlsx" if casa else "estado_cuenta_general.xlsx"
+
+    return Response(
+        output,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f"attachment; filename={nombre}"
+        }
     )
 
 # ==========================================================
