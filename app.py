@@ -163,24 +163,37 @@ def minutas():
 @app.route('/estado-cuenta')
 def estado_cuenta():
     casa = request.args.get('casa')
-
     cur, conn = get_cursor()
 
     # PAGOS
     if casa:
-        cur.execute("SELECT * FROM pagos WHERE casa=%s ORDER BY fecha DESC", (casa,))
-        cur.execute("SELECT COALESCE(SUM(monto),0) total FROM pagos WHERE casa=%s", (casa,))
+        cur.execute(
+            "SELECT * FROM pagos WHERE casa=%s ORDER BY fecha DESC",
+            (casa,)
+        )
     else:
         cur.execute("SELECT * FROM pagos ORDER BY fecha DESC")
-        cur.execute("SELECT COALESCE(SUM(monto),0) total FROM pagos")
 
     pagos = cur.fetchall()
+
+    # INGRESOS
+    if casa:
+        cur.execute(
+            "SELECT COALESCE(SUM(monto),0) AS total FROM pagos WHERE casa=%s",
+            (casa,)
+        )
+    else:
+        cur.execute(
+            "SELECT COALESCE(SUM(monto),0) AS total FROM pagos"
+        )
+
     ingresos = cur.fetchone()['total']
 
-    # GASTOS (siempre globales)
+    # GASTOS (GLOBAL)
     cur.execute("SELECT * FROM gastos ORDER BY fecha DESC")
     gastos = cur.fetchall()
-    cur.execute("SELECT COALESCE(SUM(monto),0) total FROM gastos")
+
+    cur.execute("SELECT COALESCE(SUM(monto),0) AS total FROM gastos")
     egresos = cur.fetchone()['total']
 
     conn.close()
@@ -194,6 +207,7 @@ def estado_cuenta():
         disponible=ingresos - egresos,
         casa=casa
     )
+
 
 
 @app.route('/estado-cuenta/excel')
