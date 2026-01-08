@@ -208,7 +208,13 @@ def estado_cuenta():
         casa=casa
     )
 
-
+@app.route('/requerimientos')
+def requerimientos():
+    cur, conn = get_cursor()
+    cur.execute("SELECT * FROM requerimientos ORDER BY prioridad")
+    data = cur.fetchall()
+    conn.close()
+    return render_template('requerimientos.html', data=data)
 
 @app.route('/estado-cuenta/excel')
 def estado_cuenta_excel():
