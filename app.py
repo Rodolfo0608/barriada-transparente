@@ -93,7 +93,8 @@ def init_db():
         casa TEXT,
         monto NUMERIC,
         fecha DATE,
-        comprobante TEXT
+        comprobante TEXT,
+        notas TEXT
     );
 
     CREATE TABLE IF NOT EXISTS gastos (
@@ -312,9 +313,9 @@ def admin_pago():
 
         cur, conn = get_cursor()
         cur.execute("""
-            INSERT INTO pagos (casa, monto, fecha, comprobante)
-            VALUES (%s, %s, %s, %s)
-        """, (casa, monto, datetime.now().date(), url))
+            INSERT INTO pagos (casa, monto, fecha, comprobante, notas)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (casa, monto, datetime.now().date(), url, request.form.get('notas')))
         conn.commit()
         conn.close()
 
@@ -412,6 +413,60 @@ def admin_comite():
         return redirect('/comite')
 
     return render_template('admin_comite.html')
+
+# ==========================================================
+# 🗑️ DELETE LÓGICO – SOLO ADMIN
+# ==========================================================
+
+@app.route('/admin/delete/pago/<int:id>', methods=['POST'])
+@admin_required
+def delete_pago(id):
+    cur, conn = get_cursor()
+    cur.execute("DELETE FROM pagos WHERE id=%s", (id,))
+    conn.commit()
+    conn.close()
+    return redirect('/estado-cuenta')
+
+
+@app.route('/admin/delete/minuta/<int:id>', methods=['POST'])
+@admin_required
+def delete_minuta(id):
+    cur, conn = get_cursor()
+    cur.execute("DELETE FROM minutas WHERE id=%s", (id,))
+    conn.commit()
+    conn.close()
+    return redirect('/minutas')
+
+
+@app.route('/admin/delete/gasto/<int:id>', methods=['POST'])
+@admin_required
+def delete_gasto(id):
+    cur, conn = get_cursor()
+    cur.execute("DELETE FROM gastos WHERE id=%s", (id,))
+    conn.commit()
+    conn.close()
+    return redirect('/estado-cuenta')
+
+
+@app.route('/admin/delete/comite/<int:id>', methods=['POST'])
+@admin_required
+def delete_comite(id):
+    cur, conn = get_cursor()
+    cur.execute("DELETE FROM comite WHERE id=%s", (id,))
+    conn.commit()
+    conn.close()
+    return redirect('/comite')
+
+
+@app.route('/admin/delete/requerimiento/<int:id>', methods=['POST'])
+@admin_required
+def delete_requerimiento(id):
+    cur, conn = get_cursor()
+    cur.execute("DELETE FROM requerimientos WHERE id=%s", (id,))
+    conn.commit()
+    conn.close()
+    return redirect('/requerimientos')
+
 
 # ==========================================================
 # LOGIN / LOGOUT
