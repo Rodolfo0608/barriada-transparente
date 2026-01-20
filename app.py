@@ -415,9 +415,15 @@ def admin_comite():
         conn.commit()
         conn.close()
 
-        return redirect('/comite')
+        return redirect('/admin/comite')
 
-    return render_template('admin_comite.html')
+    # 🔑 ESTO ES LO QUE ANTES NO ESTABA
+    cur, conn = get_cursor()
+    cur.execute("SELECT * FROM comite ORDER BY nombre")
+    data = cur.fetchall()
+    conn.close()
+
+    return render_template('admin_comite.html', data=data)
 
 # ==========================================================
 # 🗑️ DELETE LÓGICO – SOLO ADMIN

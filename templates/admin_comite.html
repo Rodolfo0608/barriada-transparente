@@ -50,37 +50,45 @@
             <th>Acciones</th>
         </tr>
     </thead>
-    <tbody>
+	<tbody>
 
-    {% for c in data %}
-        <tr>
-            <td>
-                {% if c.foto %}
-                    <img src="{{ c.foto }}" alt="Foto"
-                         style="height:60px;border-radius:50%;">
-                {% else %}
-                    —
-                {% endif %}
-            </td>
-            <td>{{ c.nombre }}</td>
-            <td>{{ c.cargo }}</td>
-            <td>{{ c.casa }}</td>
-            <td>
-                {% if session.get('rol') == 'admin' %}
-                <form method="POST"
-                      action="/admin/delete/comite/{{ c.id }}"
-                      onsubmit="return confirm('¿Eliminar este miembro del comité?');"
-                      style="display:inline;">
-                    <button class="btn btn-danger btn-sm">
-                        Eliminar
-                    </button>
-                </form>
-                {% endif %}
-            </td>
-        </tr>
-    {% endfor %}
+	{% if data %}
+		{% for c in data %}
+			<tr>
+				<td>
+					{% if c.foto %}
+						<img src="{{ c.foto }}" alt="Foto"
+							 style="height:60px;border-radius:50%;">
+					{% else %}
+						—
+					{% endif %}
+				</td>
+				<td>{{ c.nombre }}</td>
+				<td>{{ c.cargo }}</td>
+				<td>{{ c.casa }}</td>
+				<td>
+					{% if session.get('rol') == 'admin' %}
+					<form method="POST"
+						  action="/admin/delete/comite/{{ c.id }}"
+						  onsubmit="return confirm('¿Eliminar este miembro del comité?');"
+						  style="display:inline;">
+						<button class="btn btn-danger btn-sm">
+							Eliminar
+						</button>
+					</form>
+					{% endif %}
+				</td>
+			</tr>
+		{% endfor %}
+	{% else %}
+		<tr>
+			<td colspan="5" class="text-center text-muted">
+				No hay miembros cargados en el comité
+			</td>
+		</tr>
+	{% endif %}
 
-    </tbody>
+	</tbody>
 </table>
 </div>
 
