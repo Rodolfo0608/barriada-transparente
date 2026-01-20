@@ -65,15 +65,16 @@
     {% if data %}
         {% for p in data %}
         <tr>
-            <td>{{ p.casa }}</td>
-            <td>${{ p.monto }}</td>
-            <td>{{ p.fecha }}</td>
+            <td>{{ p['casa'] }}</td>
+            <td>${{ p['monto'] }}</td>
+            <td>{{ p['fecha'] }}</td>
+            <td>{{ p['notas'] if p['notas'] else '—' }}</td>
             <td>
-                {{ p.notas if p.notas else '—' }}
-            </td>
-            <td>
-                {% if p.comprobante %}
-                    <a href="{{ p.comprobante }}" target="_blank">Ver</a>
+                {% if p['comprobante'] %}
+                    <a href="{{ p['comprobante'] }}?response-content-disposition=inline"
+                       target="_blank">
+                        Ver
+                    </a>
                 {% else %}
                     —
                 {% endif %}
@@ -81,7 +82,7 @@
             <td>
                 {% if session.get('rol') == 'admin' %}
                 <form method="POST"
-                      action="/admin/delete/pago/{{ p.id }}"
+                      action="/admin/delete/pago/{{ p['id'] }}"
                       onsubmit="return confirm('¿Eliminar este pago?');"
                       style="display:inline;">
                     <button class="btn btn-danger btn-sm">

@@ -363,6 +363,8 @@ def estado_cuenta_excel():
 @app.route('/admin/pago', methods=['GET', 'POST'])
 @admin_required
 def admin_pago():
+    cur, conn = get_cursor()
+
     if request.method == 'POST':
         casa = request.form['casa']
         monto = request.form['monto']
@@ -370,7 +372,6 @@ def admin_pago():
 
         url = None
         if archivo and archivo.filename:
-            # 🔑 CAMBIO CLAVE: usar resource_type="raw" para PDFs
             result = cloudinary.uploader.upload(
                 archivo,
                 resource_type="raw",
@@ -378,7 +379,6 @@ def admin_pago():
             )
             url = result["secure_url"]
 
-        cur, conn = get_cursor()
         cur.execute("""
             INSERT INTO pagos (casa, monto, fecha, comprobante, notas)
             VALUES (%s, %s, %s, %s, %s)
@@ -390,11 +390,15 @@ def admin_pago():
             request.form.get('notas')
         ))
         conn.commit()
-        conn.close()
 
-        return redirect('/estado-cuenta')
+        return redirect('/admin/pago')
 
-    return render_template('admin_pago.html')
+    # 🔑 ESTO ERA LO QUE FALTABA
+    cur.execute("SELECT * FROM pagos ORDER BY fecha DESC")
+    data = cur.fetchall()
+    conn.close()
+
+    return render_template('admin_pago.html', data=data)
 
 
 # ==========================================================
