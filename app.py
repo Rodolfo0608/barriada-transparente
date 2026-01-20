@@ -374,7 +374,7 @@ def admin_pago():
         if archivo and archivo.filename:
             result = cloudinary.uploader.upload(
                 archivo,
-                resource_type="raw",
+                resource_type="auto",
                 folder="barriada/pagos"
             )
             url = result["secure_url"]
