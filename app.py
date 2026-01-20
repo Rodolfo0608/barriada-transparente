@@ -9,10 +9,10 @@ import psycopg2.extras
 import os
 from datetime import datetime
 from functools import wraps
+from supabase import create_client
+import uuid
 
-# Cloudinary
-import cloudinary
-import cloudinary.uploader
+
 
 # ==========================================================
 # CONFIGURACIÓN GENERAL
@@ -23,16 +23,12 @@ app.secret_key = 'barriada-segura'
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-# ==========================================================
-# CLOUDINARY CONFIG
-# ==========================================================
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+SUPABASE_BUCKET = os.environ.get("SUPABASE_BUCKET")
 
-cloudinary.config(
-    cloud_name=os.environ.get("CLOUDINARY_CLOUD_NAME"),
-    api_key=os.environ.get("CLOUDINARY_API_KEY"),
-    api_secret=os.environ.get("CLOUDINARY_API_SECRET"),
-    secure=True
-)
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
 
 # ==========================================================
 # CONTEXTO GLOBAL PARA TEMPLATES
@@ -168,6 +164,31 @@ def admin_required(f):
             return redirect('/login')
         return f(*args, **kwargs)
     return wrapper
+
+
+def subir_a_supabase(file, carpeta):
+    # Extensión segura
+    ext = file.filename.rsplit('.', 1)[-1].lower()
+
+    # Nombre único por archivo
+    nombre = f"{carpeta}/{uuid.uuid4()}.{ext}"
+
+    # Leer contenido UNA sola vez
+    contenido = file.read()
+
+    # Subir a Supabase Storage
+    supabase.storage.from_(SUPABASE_BUCKET).upload(
+        nombre,
+        contenido,
+        file_options={
+            "content-type": file.mimetype,
+            "upsert": False
+        }
+    )
+
+    # URL pública
+    return supabase.storage.from_(SUPABASE_BUCKET).get_public_url(nombre)
+
 
 # ==========================================================
 # RUTAS PÚBLICAS
@@ -372,22 +393,8 @@ def admin_pago():
 
         url = None
         if archivo and archivo.filename:
-            filename = archivo.filename.lower()
-
-            if filename.endswith('.pdf'):
-                result = cloudinary.uploader.upload(
-                    archivo,
-                    resource_type="image",
-                    folder="barriada/pagos"
-                )
-            else:
-                result = cloudinary.uploader.upload(
-                    archivo,
-                    resource_type="image",
-                    folder="barriada/pagos"
-                )
-
-            url = result["secure_url"]
+            # 📦 Subida a Supabase Storage
+            url = subir_a_supabase(archivo, "pagos")
 
         cur.execute("""
             INSERT INTO pagos (casa, monto, fecha, comprobante, notas)
@@ -403,12 +410,13 @@ def admin_pago():
 
         return redirect('/admin/pago')
 
-    # 🔑 ESTO ERA LO QUE FALTABA
+    # 🔑 listado de pagos
     cur.execute("SELECT * FROM pagos ORDER BY fecha DESC")
     data = cur.fetchall()
     conn.close()
 
     return render_template('admin_pago.html', data=data)
+
 
 
 # ==========================================================
@@ -425,11 +433,7 @@ def admin_minuta():
 
         url = None
         if archivo and archivo.filename:
-            url = cloudinary.uploader.upload(
-                archivo,
-                resource_type="auto",
-                folder="barriada/minutas"
-            )["secure_url"]
+            url = subir_a_supabase(archivo, "minutas")
 
         cur, conn = get_cursor()
         cur.execute("""
@@ -459,11 +463,8 @@ def admin_gasto():
 
         url = None
         if archivo and archivo.filename:
-            url = cloudinary.uploader.upload(
-                archivo,
-                resource_type="auto",
-                folder="barriada/gastos"
-            )["secure_url"]
+            # 📦 Subida a Supabase Storage
+            url = subir_a_supabase(archivo, "gastos")
 
         cur, conn = get_cursor()
         cur.execute("""
@@ -477,7 +478,6 @@ def admin_gasto():
 
     return render_template('admin_gasto.html')
 
-
 @app.route('/admin/comite', methods=['GET', 'POST'])
 @admin_required
 def admin_comite():
@@ -489,11 +489,8 @@ def admin_comite():
 
         url = None
         if archivo and archivo.filename:
-            url = cloudinary.uploader.upload(
-                archivo,
-                resource_type="image",
-                folder="barriada/comite"
-            )["secure_url"]
+            # 📦 Subida a Supabase Storage
+            url = subir_a_supabase(archivo, "comite")
 
         cur, conn = get_cursor()
         cur.execute("""

@@ -1,5 +1,5 @@
 flask
 psycopg2-binary
 gunicorn
-cloudinary
+supabase
 openpyxl
