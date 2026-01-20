@@ -351,9 +351,14 @@ def admin_minuta():
         conn.commit()
         conn.close()
 
-        return redirect('/minutas')
+        return redirect('/admin/minuta')
 
-    return render_template('admin_minuta.html')
+    cur, conn = get_cursor()
+    cur.execute("SELECT * FROM minutas ORDER BY fecha DESC")
+    data = cur.fetchall()
+    conn.close()
+
+    return render_template('admin_minuta.html', data=data)
 
 
 @app.route('/admin/gasto', methods=['GET', 'POST'])

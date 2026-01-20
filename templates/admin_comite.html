@@ -1,16 +1,19 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta charset="UTF-8">
-    <title>Miembro del Comité</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Administrar Comité</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+          rel="stylesheet">
 </head>
-<body class="fs-5" class="container mt-4">
+
+<body class="container mt-4 fs-5">
 
 <h3>👤 Agregar Miembro del Comité</h3>
 
-<form method="post" enctype="multipart/form-data">
+<form method="post" enctype="multipart/form-data" class="mb-5">
 
     <label class="form-label">Nombre</label>
     <input class="form-control mb-2" name="nombre" required>
@@ -22,13 +25,64 @@
     <input class="form-control mb-2" name="casa" required>
 
     <label class="form-label">Foto</label>
-    <input class="form-control mb-3" type="file"
-           name="foto" accept="image/*">
+    <input class="form-control mb-3"
+           type="file"
+           name="foto"
+           accept="image/*">
 
     <button class="btn btn-lg btn-primary">Guardar</button>
     <a href="/comite" class="btn btn-lg btn-secondary">Cancelar</a>
 
 </form>
+
+<hr>
+
+<h4>📋 Miembros del Comité</h4>
+
+<div class="table-responsive">
+<table class="table table-striped table-bordered align-middle">
+    <thead class="table-dark">
+        <tr>
+            <th>Foto</th>
+            <th>Nombre</th>
+            <th>Cargo</th>
+            <th>Casa</th>
+            <th>Acciones</th>
+        </tr>
+    </thead>
+    <tbody>
+
+    {% for c in data %}
+        <tr>
+            <td>
+                {% if c.foto %}
+                    <img src="{{ c.foto }}" alt="Foto"
+                         style="height:60px;border-radius:50%;">
+                {% else %}
+                    —
+                {% endif %}
+            </td>
+            <td>{{ c.nombre }}</td>
+            <td>{{ c.cargo }}</td>
+            <td>{{ c.casa }}</td>
+            <td>
+                {% if session.get('rol') == 'admin' %}
+                <form method="POST"
+                      action="/admin/delete/comite/{{ c.id }}"
+                      onsubmit="return confirm('¿Eliminar este miembro del comité?');"
+                      style="display:inline;">
+                    <button class="btn btn-danger btn-sm">
+                        Eliminar
+                    </button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+    {% endfor %}
+
+    </tbody>
+</table>
+</div>
 
 </body>
 </html>
