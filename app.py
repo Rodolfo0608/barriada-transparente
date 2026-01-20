@@ -370,11 +370,13 @@ def admin_pago():
 
         url = None
         if archivo and archivo.filename:
-            url = cloudinary.uploader.upload(
+            # 🔑 CAMBIO CLAVE: usar resource_type="raw" para PDFs
+            result = cloudinary.uploader.upload(
                 archivo,
-                resource_type="auto",
+                resource_type="raw",
                 folder="barriada/pagos"
-            )["secure_url"]
+            )
+            url = result["secure_url"]
 
         cur, conn = get_cursor()
         cur.execute("""
@@ -393,6 +395,7 @@ def admin_pago():
         return redirect('/estado-cuenta')
 
     return render_template('admin_pago.html')
+
 
 # ==========================================================
 # ADMINISTRACIÓN (MINUTA / GASTO / COMITÉ)
