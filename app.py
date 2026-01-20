@@ -372,11 +372,21 @@ def admin_pago():
 
         url = None
         if archivo and archivo.filename:
-            result = cloudinary.uploader.upload(
-                archivo,
-                resource_type="auto",
-                folder="barriada/pagos"
-            )
+            filename = archivo.filename.lower()
+
+            if filename.endswith('.pdf'):
+                result = cloudinary.uploader.upload(
+                    archivo,
+                    resource_type="image",
+                    folder="barriada/pagos"
+                )
+            else:
+                result = cloudinary.uploader.upload(
+                    archivo,
+                    resource_type="image",
+                    folder="barriada/pagos"
+                )
+
             url = result["secure_url"]
 
         cur.execute("""
