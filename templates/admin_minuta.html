@@ -13,21 +13,31 @@
 
 <h3>➕ Subir Minuta</h3>
 
-<form method="post" enctype="multipart/form-data" class="mb-5">
+<form method="post"
+      enctype="multipart/form-data"
+      class="mb-5"
+      autocomplete="off">
+
+    <label class="form-label">Título</label>
     <input class="form-control mb-2"
            name="titulo"
            placeholder="Título de la reunión"
+           autocomplete="off"
            required>
 
+    <label class="form-label">Resumen</label>
     <textarea class="form-control mb-2"
               name="resumen"
               placeholder="Resumen de la reunión"
+              rows="3"
+              autocomplete="off"
               required></textarea>
 
+    <label class="form-label">Archivo (PDF o DOCX)</label>
     <input class="form-control mb-3"
            type="file"
            name="archivo"
-           accept="application/pdf">
+           accept="application/pdf,.doc,.docx">
 
     <button class="btn btn-lg btn-primary">Guardar Minuta</button>
     <a href="/minutas" class="btn btn-lg btn-secondary">Cancelar</a>
@@ -52,11 +62,13 @@
     {% if data %}
         {% for m in data %}
         <tr>
-            <td>{{ m.titulo }}</td>
-            <td>{{ m.fecha }}</td>
+            <td>{{ m['titulo'] }}</td>
+            <td>{{ m['fecha'] }}</td>
             <td>
-                {% if m.archivo %}
-                    <a href="{{ m.archivo }}" target="_blank">Ver PDF</a>
+                {% if m['archivo'] %}
+                    <a href="{{ m['archivo'] }}" target="_blank">
+                        Ver
+                    </a>
                 {% else %}
                     —
                 {% endif %}
@@ -64,7 +76,7 @@
             <td>
                 {% if session.get('rol') == 'admin' %}
                 <form method="POST"
-                      action="/admin/delete/minuta/{{ m.id }}"
+                      action="/admin/delete/minuta/{{ m['id'] }}"
                       onsubmit="return confirm('¿Eliminar esta minuta?');"
                       style="display:inline;">
                     <button class="btn btn-danger btn-sm">

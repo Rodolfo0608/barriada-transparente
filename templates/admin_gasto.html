@@ -13,12 +13,16 @@
 
 <h3>🧾 Registrar Gasto</h3>
 
-<form method="post" enctype="multipart/form-data" class="mb-5">
+<form method="post"
+      enctype="multipart/form-data"
+      class="mb-5"
+      autocomplete="off">
 
     <label class="form-label">Descripción</label>
     <input class="form-control mb-2"
            name="descripcion"
            placeholder="Ej: Reparación luminaria, limpieza, proveedor X"
+           autocomplete="off"
            required>
 
     <label class="form-label">Monto</label>
@@ -26,6 +30,7 @@
            name="monto"
            type="number"
            step="0.01"
+           autocomplete="off"
            required>
 
     <label class="form-label">Factura (PDF o imagen)</label>
@@ -58,12 +63,14 @@
     {% if data %}
         {% for g in data %}
         <tr>
-            <td>{{ g.descripcion }}</td>
-            <td>${{ g.monto }}</td>
-            <td>{{ g.fecha }}</td>
+            <td>{{ g['descripcion'] }}</td>
+            <td>${{ g['monto'] }}</td>
+            <td>{{ g['fecha'] }}</td>
             <td>
-                {% if g.factura %}
-                    <a href="{{ g.factura }}" target="_blank">Ver</a>
+                {% if g['factura'] %}
+                    <a href="{{ g['factura'] }}" target="_blank">
+                        Ver
+                    </a>
                 {% else %}
                     —
                 {% endif %}
@@ -71,7 +78,7 @@
             <td>
                 {% if session.get('rol') == 'admin' %}
                 <form method="POST"
-                      action="/admin/delete/gasto/{{ g.id }}"
+                      action="/admin/delete/gasto/{{ g['id'] }}"
                       onsubmit="return confirm('¿Eliminar este gasto?');"
                       style="display:inline;">
                     <button class="btn btn-danger btn-sm">

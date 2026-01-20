@@ -14,7 +14,10 @@
 <!-- FILTRO + EXPORTAR -->
 <div class="row align-items-end mb-4">
 
-    <form method="get" class="col-md-8 row g-2">
+    <form method="get"
+          class="col-md-8 row g-2"
+          autocomplete="off">
+
         <div class="col-md-6">
             <input
                 type="text"
@@ -22,8 +25,10 @@
                 class="form-control"
                 placeholder="Filtrar por casa (Ej: A-12)"
                 value="{{ casa or '' }}"
+                autocomplete="off"
             >
         </div>
+
         <div class="col-md-3">
             <button class="btn btn-lg btn-primary w-100">
                 Filtrar
@@ -100,25 +105,14 @@
             <td>{{ p['casa'] }}</td>
             <td>${{ p['monto'] }}</td>
             <td>{{ p['fecha'] }}</td>
-
             <td class="text-wrap" style="max-width:300px">
                 {{ p['notas'] if p['notas'] else '—' }}
             </td>
-
             <td>
                 {% if p['comprobante'] %}
-                    {% if p['comprobante'].endswith('.pdf') %}
-                        <a href="{{ p['comprobante'] }}?response-content-disposition=inline"
-                           target="_blank">
-                            📄 Ver PDF
-                        </a>
-                    {% else %}
-                        <a href="{{ p['comprobante'] }}" target="_blank">
-                            <img src="{{ p['comprobante'] }}"
-                                 style="max-height:60px"
-                                 class="img-thumbnail">
-                        </a>
-                    {% endif %}
+                    <a href="{{ p['comprobante'] }}" target="_blank">
+                        Ver
+                    </a>
                 {% else %}
                     —
                 {% endif %}
@@ -158,18 +152,9 @@
             <td>{{ g['fecha'] }}</td>
             <td>
                 {% if g['factura'] %}
-                    {% if g['factura'].endswith('.pdf') %}
-                        <a href="{{ g['factura'] }}?response-content-disposition=inline"
-                           target="_blank">
-                            📄 Ver PDF
-                        </a>
-                    {% else %}
-                        <a href="{{ g['factura'] }}" target="_blank">
-                            <img src="{{ g['factura'] }}"
-                                 style="max-height:60px"
-                                 class="img-thumbnail">
-                        </a>
-                    {% endif %}
+                    <a href="{{ g['factura'] }}" target="_blank">
+                        Ver
+                    </a>
                 {% else %}
                     —
                 {% endif %}
