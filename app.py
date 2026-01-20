@@ -513,7 +513,7 @@ def delete_pago(id):
     cur.execute("DELETE FROM pagos WHERE id=%s", (id,))
     conn.commit()
     conn.close()
-    return redirect('/estado-cuenta')
+    return redirect('/admin/pago')
 
 
 @app.route('/admin/delete/minuta/<int:id>', methods=['POST'])
