@@ -128,8 +128,34 @@ def crear_admin_si_no_existe():
     conn.close()
 
 
+# ==========================================================
+# 🔧 VALIDACIÓN DE COLUMNA notas EN PAGOS
+# ==========================================================
+
+def ensure_pagos_notas_column():
+    cur, conn = get_cursor()
+    cur.execute("""
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_name='pagos'
+          AND column_name='notas'
+    """)
+    existe = cur.fetchone()
+
+    if not existe:
+        cur.execute("ALTER TABLE pagos ADD COLUMN notas TEXT")
+        conn.commit()
+
+    conn.close()
+
+
+# ==========================================================
+# INICIALIZACIÓN
+# ==========================================================
+
 init_db()
 crear_admin_si_no_existe()
+ensure_pagos_notas_column()
 
 # ==========================================================
 # SEGURIDAD
@@ -190,7 +216,7 @@ def estado_cuenta():
 
     ingresos = cur.fetchone()['total']
 
-    # GASTOS (GLOBAL)
+    # GASTOS
     cur.execute("SELECT * FROM gastos ORDER BY fecha DESC")
     gastos = cur.fetchall()
 
@@ -209,6 +235,7 @@ def estado_cuenta():
         casa=casa
     )
 
+
 @app.route('/comite')
 def comite():
     cur, conn = get_cursor()
@@ -225,7 +252,8 @@ def requerimientos():
     data = cur.fetchall()
     conn.close()
     return render_template('requerimientos.html', data=data)
-    
+
+
 @app.route('/sugerencias', methods=['GET', 'POST'])
 def sugerencias():
     cur, conn = get_cursor()
@@ -249,35 +277,71 @@ def sugerencias():
 
     return render_template('sugerencias.html', data=data)
 
+
 @app.route('/estado-cuenta/excel')
 def estado_cuenta_excel():
     casa = request.args.get('casa')
     cur, conn = get_cursor()
 
+    # =========================
+    # PAGOS
+    # =========================
     if casa:
-        cur.execute("SELECT * FROM pagos WHERE casa=%s ORDER BY fecha DESC", (casa,))
+        cur.execute(
+            "SELECT casa, monto, fecha, comprobante, notas FROM pagos WHERE casa=%s ORDER BY fecha DESC",
+            (casa,)
+        )
     else:
-        cur.execute("SELECT * FROM pagos ORDER BY fecha DESC")
+        cur.execute(
+            "SELECT casa, monto, fecha, comprobante, notas FROM pagos ORDER BY fecha DESC"
+        )
 
     pagos = cur.fetchall()
-    cur.execute("SELECT * FROM gastos ORDER BY fecha DESC")
+
+    # =========================
+    # GASTOS
+    # =========================
+    cur.execute(
+        "SELECT descripcion, monto, fecha, factura FROM gastos ORDER BY fecha DESC"
+    )
     gastos = cur.fetchall()
+
     conn.close()
 
+    # =========================
+    # EXCEL
+    # =========================
     wb = Workbook()
+
+    # --- Hoja Pagos ---
     ws = wb.active
     ws.title = "Pagos"
-    ws.append(["Casa", "Monto", "Fecha", "Comprobante"])
+    ws.append(["Casa", "Monto", "Fecha", "Notas", "Comprobante"])
 
     for p in pagos:
-        ws.append([p['casa'], float(p['monto']), str(p['fecha']), p['comprobante'] or ""])
+        ws.append([
+            p['casa'],
+            float(p['monto']),
+            str(p['fecha']),
+            p['notas'] or "",
+            p['comprobante'] or ""
+        ])
 
+    # --- Hoja Gastos ---
     ws2 = wb.create_sheet("Gastos")
     ws2.append(["Descripción", "Monto", "Fecha", "Factura"])
 
     for g in gastos:
-        ws2.append([g['descripcion'], float(g['monto']), str(g['fecha']), g['factura'] or ""])
+        ws2.append([
+            g['descripcion'],
+            float(g['monto']),
+            str(g['fecha']),
+            g['factura'] or ""
+        ])
 
+    # =========================
+    # RESPUESTA
+    # =========================
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
@@ -287,11 +351,13 @@ def estado_cuenta_excel():
     return Response(
         output,
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={nombre}"}
+        headers={
+            "Content-Disposition": f"attachment; filename={nombre}"
+        }
     )
 
 # ==========================================================
-# 🔐 PAGO – SOLO ADMIN (CAMBIO CLAVE)
+# 🔐 PAGO – SOLO ADMIN
 # ==========================================================
 
 @app.route('/admin/pago', methods=['GET', 'POST'])
@@ -304,18 +370,23 @@ def admin_pago():
 
         url = None
         if archivo and archivo.filename:
-            result = cloudinary.uploader.upload(
+            url = cloudinary.uploader.upload(
                 archivo,
                 resource_type="auto",
                 folder="barriada/pagos"
-            )
-            url = result["secure_url"]
+            )["secure_url"]
 
         cur, conn = get_cursor()
         cur.execute("""
             INSERT INTO pagos (casa, monto, fecha, comprobante, notas)
             VALUES (%s, %s, %s, %s, %s)
-        """, (casa, monto, datetime.now().date(), url, request.form.get('notas')))
+        """, (
+            casa,
+            monto,
+            datetime.now().date(),
+            url,
+            request.form.get('notas')
+        ))
         conn.commit()
         conn.close()
 
@@ -324,7 +395,7 @@ def admin_pago():
     return render_template('admin_pago.html')
 
 # ==========================================================
-# ADMINISTRACIÓN
+# ADMINISTRACIÓN (MINUTA / GASTO / COMITÉ)
 # ==========================================================
 
 @app.route('/admin/minuta', methods=['GET', 'POST'])
@@ -417,7 +488,6 @@ def admin_comite():
 
         return redirect('/admin/comite')
 
-    # 🔑 ESTO ES LO QUE ANTES NO ESTABA
     cur, conn = get_cursor()
     cur.execute("SELECT * FROM comite ORDER BY nombre")
     data = cur.fetchall()
@@ -426,7 +496,7 @@ def admin_comite():
     return render_template('admin_comite.html', data=data)
 
 # ==========================================================
-# 🗑️ DELETE LÓGICO – SOLO ADMIN
+# 🗑️ DELETE – SOLO ADMIN
 # ==========================================================
 
 @app.route('/admin/delete/pago/<int:id>', methods=['POST'])
@@ -477,7 +547,6 @@ def delete_requerimiento(id):
     conn.commit()
     conn.close()
     return redirect('/requerimientos')
-
 
 # ==========================================================
 # LOGIN / LOGOUT

@@ -28,6 +28,12 @@
            step="0.01"
            required>
 
+    <label class="form-label">Notas / Descripción</label>
+    <textarea class="form-control mb-2"
+              name="notas"
+              rows="2"
+              placeholder="Ej: Pago de mantenimiento, enero 2026"></textarea>
+
     <label class="form-label">Comprobante (PDF o imagen)</label>
     <input class="form-control mb-3"
            type="file"
@@ -49,6 +55,7 @@
             <th>Casa</th>
             <th>Monto</th>
             <th>Fecha</th>
+            <th>Notas</th>
             <th>Comprobante</th>
             <th>Acciones</th>
         </tr>
@@ -61,6 +68,9 @@
             <td>{{ p.casa }}</td>
             <td>${{ p.monto }}</td>
             <td>{{ p.fecha }}</td>
+            <td>
+                {{ p.notas if p.notas else '—' }}
+            </td>
             <td>
                 {% if p.comprobante %}
                     <a href="{{ p.comprobante }}" target="_blank">Ver</a>
@@ -84,7 +94,7 @@
         {% endfor %}
     {% else %}
         <tr>
-            <td colspan="5" class="text-center text-muted">
+            <td colspan="6" class="text-center text-muted">
                 No hay pagos registrados
             </td>
         </tr>
