@@ -1,0 +1,120 @@
+{% extends "layout.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+
+<h3 class="mb-4">📊 Dashboard Financiero</h3>
+
+<!-- KPIs -->
+<div class="row text-center mb-4">
+    <div class="col-md-3 mb-3">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h6 class="text-muted">Total Pagado</h6>
+                <h4 class="text-success fw-bold">
+                    ${{ total_pagado }}
+                </h4>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-3">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h6 class="text-muted">Total Pendiente</h6>
+                <h4 class="text-danger fw-bold">
+                    ${{ total_pendiente }}
+                </h4>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-3">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h6 class="text-muted">Casas al día</h6>
+                <h4 class="text-primary fw-bold">
+                    {{ casas_al_dia }}
+                </h4>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-3">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h6 class="text-muted">Casas Pendientes</h6>
+                <h4 class="text-warning fw-bold">
+                    {{ casas_pendientes }}
+                </h4>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- GRÁFICOS -->
+<div class="row">
+    <div class="col-md-6 mb-4">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h6 class="text-center mb-3">
+                    💰 Pagos vs Pendientes
+                </h6>
+                <canvas id="pagosChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6 mb-4">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <h6 class="text-center mb-3">
+                    🏠 Estado de Casas
+                </h6>
+                <canvas id="casasChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+const pagosChart = new Chart(
+    document.getElementById('pagosChart'),
+    {
+        type: 'doughnut',
+        data: {
+            labels: ['Pagado', 'Pendiente'],
+            datasets: [{
+                data: [
+                    {{ total_pagado }},
+                    {{ total_pendiente }}
+                ],
+                backgroundColor: ['#198754', '#dc3545']
+            }]
+        }
+    }
+);
+
+const casasChart = new Chart(
+    document.getElementById('casasChart'),
+    {
+        type: 'pie',
+        data: {
+            labels: ['Al día', 'Pendientes'],
+            datasets: [{
+                data: [
+                    {{ casas_al_dia }},
+                    {{ casas_pendientes }}
+                ],
+                backgroundColor: ['#0d6efd', '#ffc107']
+            }]
+        }
+    }
+);
+</script>
+
+{% endblock %}

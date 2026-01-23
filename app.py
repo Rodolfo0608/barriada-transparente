@@ -28,6 +28,7 @@ SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 SUPABASE_BUCKET = os.environ.get("SUPABASE_BUCKET")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+TOTAL_CASAS = 250
 
 
 # ==========================================================
@@ -107,10 +108,25 @@ def init_db():
         password TEXT,
         rol TEXT
     );
+    
+    CREATE TABLE IF NOT EXISTS cuotas (
+        id SERIAL PRIMARY KEY,
+        nombre TEXT NOT NULL,
+        monto NUMERIC NOT NULL,
+        fecha DATE
+    );
+
+    CREATE TABLE IF NOT EXISTS cuota_pagos (
+        id SERIAL PRIMARY KEY,
+        cuota_id INTEGER REFERENCES cuotas(id) ON DELETE CASCADE,
+        casa INTEGER,
+        monto NUMERIC,
+        comprobante TEXT,
+        fecha DATE
+    );
     """)
     conn.commit()
     conn.close()
-
 
 def crear_admin_si_no_existe():
     cur, conn = get_cursor()
@@ -122,28 +138,6 @@ def crear_admin_si_no_existe():
         )
         conn.commit()
     conn.close()
-
-
-# ==========================================================
-# 🔧 VALIDACIÓN DE COLUMNA notas EN PAGOS
-# ==========================================================
-
-def ensure_pagos_notas_column():
-    cur, conn = get_cursor()
-    cur.execute("""
-        SELECT column_name
-        FROM information_schema.columns
-        WHERE table_name='pagos'
-          AND column_name='notas'
-    """)
-    existe = cur.fetchone()
-
-    if not existe:
-        cur.execute("ALTER TABLE pagos ADD COLUMN notas TEXT")
-        conn.commit()
-
-    conn.close()
-
 
 # ==========================================================
 # INICIALIZACIÓN
@@ -417,8 +411,6 @@ def admin_pago():
 
     return render_template('admin_pago.html', data=data)
 
-
-
 # ==========================================================
 # ADMINISTRACIÓN (MINUTA / GASTO / COMITÉ)
 # ==========================================================
@@ -474,7 +466,7 @@ def admin_gasto():
         conn.commit()
         conn.close()
 
-        return redirect('/estado-cuenta')
+        return redirect('/admin/gasto')
 
     return render_template('admin_gasto.html')
 
@@ -561,6 +553,191 @@ def delete_requerimiento(id):
     conn.commit()
     conn.close()
     return redirect('/requerimientos')
+
+    
+@app.route('/admin/cuota', methods=['GET', 'POST'])
+@admin_required
+def admin_cuota():
+    if request.method == 'POST':
+        nombre = request.form['nombre']
+        monto = request.form['monto']
+
+        cur, conn = get_cursor()
+        cur.execute("""
+            INSERT INTO cuotas (nombre, monto, fecha)
+            VALUES (%s, %s, %s)
+        """, (nombre, monto, datetime.now().date()))
+        conn.commit()
+        conn.close()
+
+        return redirect('/admin/cuotas')
+
+    return render_template('admin_cuota.html')
+
+
+@app.route('/admin/cuotas')
+@admin_required
+def admin_cuotas():
+    cur, conn = get_cursor()
+    cur.execute("SELECT * FROM cuotas ORDER BY fecha DESC")
+    data = cur.fetchall()
+    conn.close()
+
+    return render_template('admin_cuotas.html', data=data)
+
+
+@app.route('/admin/cuota/<int:cuota_id>')
+@admin_required
+def admin_cuota_detalle(cuota_id):
+    cur, conn = get_cursor()
+
+    cur.execute("SELECT * FROM cuotas WHERE id=%s", (cuota_id,))
+    cuota = cur.fetchone()
+
+    cur.execute("""
+        SELECT casa, monto, comprobante
+        FROM cuota_pagos
+        WHERE cuota_id=%s
+    """, (cuota_id,))
+    pagos = {p['casa']: p for p in cur.fetchall()}
+    conn.close()
+
+    casas = []
+    for i in range(1, TOTAL_CASAS + 1):
+        casas.append({
+            "numero": i,
+            "pago": pagos.get(i)
+        })
+
+    return render_template(
+        'admin_cuota_detalle.html',
+        cuota=cuota,
+        casas=casas
+    )
+
+
+def get_cuota(cuota_id):
+    cur, conn = get_cursor()
+    cur.execute("SELECT * FROM cuotas WHERE id=%s", (cuota_id,))
+    cuota = cur.fetchone()
+    conn.close()
+    return cuota
+
+
+def get_casas_con_pago(cuota_id):
+    cur, conn = get_cursor()
+    cur.execute("""
+        SELECT casa, monto, comprobante
+        FROM cuota_pagos
+        WHERE cuota_id=%s
+    """, (cuota_id,))
+    pagos = {p['casa']: p for p in cur.fetchall()}
+    conn.close()
+
+    casas = []
+    for i in range(1, TOTAL_CASAS + 1):
+        casas.append({
+            "numero": i,
+            "pago": pagos.get(i)
+        })
+    return casas
+
+def ensure_pagos_notas_column():
+    cur, conn = get_cursor()
+    cur.execute("""
+        ALTER TABLE pagos
+        ADD COLUMN IF NOT EXISTS notas TEXT
+    """)
+    conn.commit()
+    conn.close()
+
+
+@app.route('/admin/cuota/<int:cuota_id>/pagar', methods=['POST'])
+@admin_required
+def pagar_cuota(cuota_id):
+    casa = int(request.form['casa'])
+    monto = request.form['monto']
+    archivo = request.files['comprobante']
+
+    url = None
+    if archivo and archivo.filename:
+        url = subir_a_supabase(archivo, "cuotas")
+
+    cur, conn = get_cursor()
+    cur.execute("""
+        INSERT INTO cuota_pagos (cuota_id, casa, monto, comprobante, fecha)
+        VALUES (%s, %s, %s, %s, %s)
+    """, (
+        cuota_id,
+        casa,
+        monto,
+        url,
+        datetime.now().date()
+    ))
+    conn.commit()
+    conn.close()
+
+    return redirect(f'/admin/cuota/{cuota_id}')
+
+@app.route('/estado-cuenta/casa')
+def estado_cuenta_por_casa():
+    cur, conn = get_cursor()
+
+    # Total pagado por casa (todas las cuotas)
+    cur.execute("""
+        SELECT casa, COALESCE(SUM(monto),0) AS total_pagado
+        FROM cuota_pagos
+        GROUP BY casa
+        ORDER BY casa
+    """)
+    pagos = {p['casa']: float(p['total_pagado']) for p in cur.fetchall()}
+
+    # Total esperado (suma de todas las cuotas)
+    cur.execute("SELECT COALESCE(SUM(monto),0) AS total FROM cuotas")
+    total_cuotas = float(cur.fetchone()['total'])
+
+    conn.close()
+
+    casas = []
+    for i in range(1, TOTAL_CASAS + 1):
+        pagado = pagos.get(i, 0)
+        casas.append({
+            'casa': i,
+            'pagado': round(pagado, 2),
+            'pendiente': round(total_cuotas - pagado, 2)
+        })
+
+    return render_template(
+        'estado_cuenta_casa.html',
+        casas=casas,
+        total_cuotas=round(total_cuotas, 2)
+    )
+
+@app.route('/admin/cuota/<int:cuota_id>/estado')
+@admin_required
+def estado_cuenta_cuota(cuota_id):
+    cuota = get_cuota(cuota_id)
+    casas = get_casas_con_pago(cuota_id)
+
+    total_esperado = TOTAL_CASAS * float(cuota['monto'])
+    total_pagado = sum(
+        float(c['pago']['monto'])
+        for c in casas if c['pago']
+    )
+
+    resumen = {
+        'total_casas': TOTAL_CASAS,
+        'total_esperado': round(total_esperado, 2),
+        'total_pagado': round(total_pagado, 2),
+        'total_pendiente': round(total_esperado - total_pagado, 2)
+    }
+
+    return render_template(
+        'admin_cuota_estado.html',
+        cuota=cuota,
+        casas=casas,
+        resumen=resumen
+    )
 
 # ==========================================================
 # LOGIN / LOGOUT

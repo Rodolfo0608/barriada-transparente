@@ -1,131 +1,56 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <title>Barriada Transparente</title>
+{% extends "layout.html" %}
 
-    <!-- CLAVE PARA MÓVIL -->
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+{% block title %}Inicio{% endblock %}
 
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-</head>
+{% block content %}
 
-<body class="bg-light">
-
-<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-  <div class="container-fluid">
-
-    <a class="navbar-brand fw-bold" href="/">
-      Barriada Transparente
-    </a>
-
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menu">
-      <span class="navbar-toggler-icon"></span>
-    </button>
-
-    <div class="collapse navbar-collapse" id="menu">
-
-      <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-
-        <li class="nav-item">
-          <a class="nav-link" href="/">Inicio</a>
-        </li>
-
-        <li class="nav-item">
-          <a class="nav-link" href="/minutas">Minutas</a>
-        </li>
-
-        <li class="nav-item">
-          <a class="nav-link" href="/estado-cuenta">Estado de Cuenta</a>
-        </li>
-
-        <li class="nav-item">
-          <a class="nav-link" href="/requerimientos">Requerimientos</a>
-        </li>
-
-        <li class="nav-item">
-          <a class="nav-link" href="/comite">Comité</a>
-        </li>
-
-        <li class="nav-item">
-          <a class="nav-link" href="/sugerencias">Sugerencias</a>
-        </li>
-
-        {% if session.get('rol') == 'admin' %}
-        <li class="nav-item dropdown">
-          <a class="nav-link dropdown-toggle text-warning" href="#" role="button" data-bs-toggle="dropdown">
-            Administración
-          </a>
-          <ul class="dropdown-menu">
-            <li><a class="dropdown-item" href="/admin/minuta">Subir Minuta</a></li>
-            <li><a class="dropdown-item" href="/admin/pago">Registrar Pago</a></li>
-            <li><a class="dropdown-item" href="/admin/gasto">Registrar Gasto</a></li>
-            <li><a class="dropdown-item" href="/admin/comite">Gestionar Comité</a></li>
-          </ul>
-        </li>
-        {% endif %}
-      </ul>
-
-      <ul class="navbar-nav ms-auto">
-        {% if session.get('usuario') %}
-          <li class="nav-item d-flex align-items-center">
-            <span class="navbar-text text-white me-3">
-              👤 {{ session['usuario'] }}
-            </span>
-          </li>
-          <li class="nav-item">
-            <a class="btn btn-outline-light btn-sm" href="/logout">Salir</a>
-          </li>
-        {% else %}
-          <li class="nav-item">
-            <a class="btn btn-light btn-sm" href="/login">Login</a>
-          </li>
-        {% endif %}
-      </ul>
-
+<div class="card shadow mb-4">
+    <div class="card-body text-center text-md-start">
+        <h3 class="mb-3">Bienvenidos</h3>
+        <p>
+            Este sitio tiene como objetivo garantizar la
+            <strong>transparencia</strong> en la gestión del comité de la barriada.
+        </p>
+        <ul class="mb-0">
+            <li>Información clara y accesible</li>
+            <li>Estado financiero visible para todos</li>
+            <li>Participación comunitaria</li>
+        </ul>
     </div>
-  </div>
-</nav>
-
-<!-- CONTENIDO -->
-<div class="container-fluid container-md mt-4">
-
-    <div class="card shadow mb-4">
-        <div class="card-body text-center text-md-start">
-            <h3 class="mb-3">Bienvenidos</h3>
-            <p>
-                Este sitio tiene como objetivo garantizar la
-                <strong>transparencia</strong> en la gestión del comité de la barriada.
-            </p>
-            <ul class="mb-0">
-                <li>Información clara y accesible</li>
-                <li>Estado financiero visible para todos</li>
-                <li>Participación comunitaria</li>
-            </ul>
-        </div>
-    </div>
-
-    <!-- BOTONES GRANDES (MÓVIL) -->
-    <div class="d-grid gap-3 d-md-none">
-        <a href="/estado-cuenta" class="btn btn-primary btn-lg">
-            💰 Estado de Cuenta
-        </a>
-        <a href="/minutas" class="btn btn-outline-primary btn-lg">
-            📄 Minutas
-        </a>
-        <a href="/requerimientos" class="btn btn-outline-primary btn-lg">
-            📌 Requerimientos
-        </a>
-        <a href="/comite" class="btn btn-outline-primary btn-lg">
-            👥 Comité
-        </a>
-        <a href="/sugerencias" class="btn btn-outline-primary btn-lg">
-            💬 Sugerencias
-        </a>
-    </div>
-
 </div>
 
-</body>
-</html>
+<!-- 🔽 SECCIÓN FINANZAS -->
+<hr>
+
+<h5 class="mt-4">📊 Finanzas</h5>
+
+<div class="d-grid gap-3 mb-4">
+    <a href="/estado-cuenta" class="btn btn-outline-primary btn-lg">
+        💰 Estado de cuenta general
+    </a>
+
+    <a href="/estado-cuenta/casa" class="btn btn-outline-success btn-lg">
+        🏠 Estado de cuenta por casa
+    </a>
+</div>
+
+<!-- BOTONES GRANDES (MÓVIL) -->
+<div class="d-grid gap-3 d-md-none">
+    <a href="/estado-cuenta" class="btn btn-primary btn-lg">
+        💰 Estado de Cuenta
+    </a>
+    <a href="/minutas" class="btn btn-outline-primary btn-lg">
+        📄 Minutas
+    </a>
+    <a href="/requerimientos" class="btn btn-outline-primary btn-lg">
+        📌 Requerimientos
+    </a>
+    <a href="/comite" class="btn btn-outline-primary btn-lg">
+        👥 Comité
+    </a>
+    <a href="/sugerencias" class="btn btn-outline-primary btn-lg">
+        💬 Sugerencias
+    </a>
+</div>
+
+{% endblock %}

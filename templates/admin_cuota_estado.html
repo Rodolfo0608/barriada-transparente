@@ -1,0 +1,97 @@
+{% extends "layout.html" %}
+
+{% block title %}Estado de Cuota{% endblock %}
+
+{% block content %}
+
+<h3 class="mb-3">
+    📊 Estado de Cuota – {{ cuota.nombre }}
+</h3>
+
+<p class="text-muted">
+    Monto por casa: <strong>${{ cuota.monto }}</strong>
+</p>
+
+<!-- RESUMEN -->
+<div class="row text-center mb-4">
+    <div class="col-md-3 mb-2">
+        <div class="alert alert-secondary">
+            Casas<br>
+            <strong>{{ resumen.total_casas }}</strong>
+        </div>
+    </div>
+    <div class="col-md-3 mb-2">
+        <div class="alert alert-info">
+            Total Esperado<br>
+            <strong>${{ resumen.total_esperado }}</strong>
+        </div>
+    </div>
+    <div class="col-md-3 mb-2">
+        <div class="alert alert-success">
+            Total Pagado<br>
+            <strong>${{ resumen.total_pagado }}</strong>
+        </div>
+    </div>
+    <div class="col-md-3 mb-2">
+        <div class="alert alert-danger">
+            Total Pendiente<br>
+            <strong>${{ resumen.total_pendiente }}</strong>
+        </div>
+    </div>
+</div>
+
+<!-- TABLA -->
+<div class="table-responsive">
+    <table class="table table-bordered table-sm align-middle">
+        <thead class="table-light">
+            <tr class="text-center">
+                <th>Casa</th>
+                <th>Monto</th>
+                <th>Estado</th>
+                <th>Comprobante</th>
+            </tr>
+        </thead>
+        <tbody>
+
+        {% for c in casas %}
+        <tr class="text-center">
+            <td class="fw-bold">
+                Casa {{ c.numero }}
+            </td>
+            <td>
+                ${{ cuota.monto }}
+            </td>
+
+            {% if c.pago %}
+                <td class="text-success fw-bold">
+                    Pagado
+                </td>
+                <td>
+                    {% if c.pago.comprobante %}
+                        <a href="{{ c.pago.comprobante }}" target="_blank">
+                            Ver
+                        </a>
+                    {% else %}
+                        —
+                    {% endif %}
+                </td>
+            {% else %}
+                <td class="text-danger fw-bold">
+                    Pendiente
+                </td>
+                <td>—</td>
+            {% endif %}
+        </tr>
+        {% endfor %}
+
+        </tbody>
+    </table>
+</div>
+
+<div class="mt-4">
+    <a href="/admin/cuotas" class="btn btn-lg btn-secondary">
+        ⬅ Volver a cuotas
+    </a>
+</div>
+
+{% endblock %}

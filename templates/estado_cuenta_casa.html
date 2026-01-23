@@ -1,0 +1,57 @@
+{% extends "layout.html" %}
+
+{% block title %}Estado de Cuenta por Casa{% endblock %}
+
+{% block content %}
+
+<h3 class="mb-3">🏠 Estado de cuenta por casa</h3>
+
+<p class="text-muted">
+    Total esperado por casa (todas las cuotas):
+    <strong>${{ total_cuotas }}</strong>
+</p>
+
+<div class="table-responsive">
+    <table class="table table-bordered table-striped align-middle">
+        <thead class="table-dark text-center">
+            <tr>
+                <th>Casa</th>
+                <th>Pagado ($)</th>
+                <th>Pendiente ($)</th>
+            </tr>
+        </thead>
+        <tbody>
+
+        {% for c in casas %}
+            <tr>
+                <td class="text-center fw-bold">
+                    Casa {{ c.casa }}
+                </td>
+
+                <td class="text-end text-success fw-bold">
+                    ${{ "%.2f"|format(c.pagado) }}
+                </td>
+
+                <td class="text-end fw-bold
+                    {% if c.pendiente > 0 %}
+                        text-danger
+                    {% else %}
+                        text-success
+                    {% endif %}
+                ">
+                    ${{ "%.2f"|format(c.pendiente) }}
+                </td>
+            </tr>
+        {% endfor %}
+
+        </tbody>
+    </table>
+</div>
+
+<div class="mt-4">
+    <a href="/" class="btn btn-lg btn-secondary">
+        ⬅ Volver al inicio
+    </a>
+</div>
+
+{% endblock %}
