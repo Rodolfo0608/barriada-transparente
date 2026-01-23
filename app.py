@@ -13,7 +13,6 @@ from supabase import create_client
 import uuid
 
 
-
 # ==========================================================
 # CONFIGURACIÓN GENERAL
 # ==========================================================
@@ -138,6 +137,16 @@ def crear_admin_si_no_existe():
         )
         conn.commit()
     conn.close()
+    
+def ensure_pagos_notas_column():
+    cur, conn = get_cursor()
+    cur.execute("""
+        ALTER TABLE pagos
+        ADD COLUMN IF NOT EXISTS notas TEXT
+    """)
+    conn.commit()
+    conn.close()
+
 
 # ==========================================================
 # INICIALIZACIÓN
@@ -641,16 +650,6 @@ def get_casas_con_pago(cuota_id):
             "pago": pagos.get(i)
         })
     return casas
-
-def ensure_pagos_notas_column():
-    cur, conn = get_cursor()
-    cur.execute("""
-        ALTER TABLE pagos
-        ADD COLUMN IF NOT EXISTS notas TEXT
-    """)
-    conn.commit()
-    conn.close()
-
 
 @app.route('/admin/cuota/<int:cuota_id>/pagar', methods=['POST'])
 @admin_required
