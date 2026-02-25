@@ -5,61 +5,88 @@
     <meta charset="UTF-8">
     <title>Minutas</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </head>
+<body class="bg-light">
 
-<body class="fs-5">
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+  <div class="container-fluid">
+    <a class="navbar-brand fw-bold" href="/">Barriada Transparente</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menu">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="menu">
+      <ul class="navbar-nav me-auto">
+        <li class="nav-item"><a class="nav-link" href="/">Inicio</a></li>
+        <li class="nav-item"><a class="nav-link active" href="/minutas">Minutas</a></li>
+      </ul>
+      <ul class="navbar-nav ms-auto">
+        {% if session.get('usuario') %}
+          <li class="nav-item d-flex align-items-center">
+            <span class="navbar-text text-white me-3">👤 {{ session['usuario'] }}</span>
+          </li>
+          <li class="nav-item"><a class="btn btn-outline-light btn-sm" href="/logout">Salir</a></li>
+        {% else %}
+          <li class="nav-item"><a class="btn btn-light btn-sm" href="/login">Login</a></li>
+        {% endif %}
+      </ul>
+    </div>
+  </div>
+</nav>
 
 <div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <h3 class="mb-0">📄 Minutas de Reuniones</h3>
+        {% if session.get('rol') == 'admin' %}
+        <a href="/admin/minuta" class="btn btn-primary btn-sm">+ Subir / Gestionar</a>
+        {% endif %}
+    </div>
 
-    <h3>📄 Minutas de Reuniones</h3>
-
-    <div class="table-responsive mt-3">
-        <table class="table table-bordered table-striped">
+    <div class="table-responsive">
+        <table class="table table-bordered table-striped table-hover">
             <thead class="table-primary">
                 <tr>
                     <th>Fecha</th>
                     <th>Título</th>
                     <th>Resumen</th>
                     <th>Documento</th>
+                    {% if session.get('rol') == 'admin' %}
+                    <th class="text-center">Eliminar</th>
+                    {% endif %}
                 </tr>
             </thead>
             <tbody>
-
-                {% if data %}
-                    {% for m in data %}
-                    <tr>
-                        <td>{{ m['fecha'] }}</td>
-                        <td>{{ m['titulo'] }}</td>
-                        <td class="text-wrap" style="max-width:400px">
-                            {{ m['resumen'] }}
-                        </td>
-                        <td>
-                            {% if m['archivo'] %}
-                                <a href="{{ m['archivo'] }}" target="_blank">
-                                    Ver
-                                </a>
-                            {% else %}
-                                —
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
+                {% for m in data %}
+                <tr>
+                    <td style="white-space:nowrap;">{{ m['fecha'] }}</td>
+                    <td>{{ m['titulo'] }}</td>
+                    <td class="small">{{ m['resumen'] }}</td>
+                    <td>
+                        {% if m['archivo'] %}
+                            <a href="{{ m['archivo'] }}" target="_blank" class="btn btn-sm btn-outline-primary py-0 px-2">Ver PDF</a>
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                    {% if session.get('rol') == 'admin' %}
+                    <td class="text-center">
+                        <form method="post" action="/admin/delete/minuta/{{ m['id'] }}"
+                              onsubmit="return confirm('¿Eliminar esta minuta?');">
+                            <button class="btn btn-sm btn-danger py-0 px-2">🗑</button>
+                        </form>
+                    </td>
+                    {% endif %}
+                </tr>
                 {% else %}
-                    <tr>
-                        <td colspan="4" class="text-center text-muted">
-                            No hay minutas registradas
-                        </td>
-                    </tr>
-                {% endif %}
-
+                <tr>
+                    <td colspan="5" class="text-center text-muted py-3">No hay minutas registradas.</td>
+                </tr>
+                {% endfor %}
             </tbody>
         </table>
     </div>
 
-    <a href="/" class="btn btn-lg btn-secondary mt-3">
-        ⬅ Volver
-    </a>
-
+    <a href="/" class="btn btn-secondary">⬅ Volver</a>
 </div>
 
 </body>

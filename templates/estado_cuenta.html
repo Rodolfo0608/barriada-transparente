@@ -1,175 +1,348 @@
-{% extends "layout.html" %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="UTF-8">
+    <title>Estado de Cuenta – Barriada</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: #f4f6f9; }
+        .house-btn {
+            display: block;
+            width: 100%;
+            padding: 5px 1px;
+            text-align: center;
+            border-radius: 5px;
+            font-weight: 700;
+            font-size: 0.78rem;
+            cursor: pointer;
+            border: 1px solid transparent;
+            text-decoration: none !important;
+            transition: transform 0.1s, box-shadow 0.1s;
+        }
+        .house-btn:hover { transform: scale(1.1); box-shadow: 0 2px 8px rgba(0,0,0,0.18); }
+        .house-al-dia   { background: #d1fae5; color: #065f46; border-color: #6ee7b7; }
+        .house-debe     { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+        .house-sin-info { background: #f1f5f9; color: #64748b; border-color: #cbd5e1; }
+        .house-parcial  { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+        .legend-box { width:14px; height:14px; display:inline-block; border-radius:3px; vertical-align:middle; margin-right:3px; }
+        #tbl-casas td { padding: 2px 2px !important; }
+        .section-title { font-size: 1.05rem; font-weight: 700; color: #1e3a5f; }
+    </style>
+</head>
+<body>
 
-{% block title %}Estado de Cuenta{% endblock %}
-
-{% block content %}
-
-<h3>💰 Estado de Cuenta</h3>
-
-<!-- FILTRO + EXPORTAR -->
-<div class="row align-items-end mb-4">
-
-    <form method="get"
-          class="col-md-8 row g-2"
-          autocomplete="off">
-
-        <div class="col-md-6">
-            <input
-                type="text"
-                name="casa"
-                class="form-control"
-                placeholder="Filtrar por casa (Ej: A-12)"
-                value="{{ casa or '' }}"
-                autocomplete="off"
-            >
-        </div>
-
-        <div class="col-md-3">
-            <button class="btn btn-lg btn-primary w-100">
-                Filtrar
-            </button>
-        </div>
-
-        {% if casa %}
-        <div class="col-md-3">
-            <a href="/estado-cuenta" class="btn btn-lg btn-secondary w-100">
-                Ver todo
-            </a>
-        </div>
+<!-- ── NAVBAR ── -->
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+  <div class="container-fluid">
+    <a class="navbar-brand fw-bold" href="/">Barriada Transparente</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#menu">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="menu">
+      <ul class="navbar-nav me-auto">
+        <li class="nav-item"><a class="nav-link" href="/">Inicio</a></li>
+        <li class="nav-item"><a class="nav-link" href="/minutas">Minutas</a></li>
+        <li class="nav-item"><a class="nav-link active" href="/estado-cuenta">Estado de Cuenta</a></li>
+        <li class="nav-item"><a class="nav-link" href="/requerimientos">Requerimientos</a></li>
+        <li class="nav-item"><a class="nav-link" href="/comite">Comité</a></li>
+        <li class="nav-item"><a class="nav-link" href="/sugerencias">Sugerencias</a></li>
+        {% if session.get('rol') == 'admin' %}
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle text-warning" href="#" role="button" data-bs-toggle="dropdown">Administración</a>
+          <ul class="dropdown-menu">
+            <li><a class="dropdown-item" href="/admin/minuta">Subir Minuta</a></li>
+            <li><a class="dropdown-item" href="/admin/pago">Registrar Pago</a></li>
+            <li><a class="dropdown-item" href="/admin/gasto">Registrar Gasto</a></li>
+            <li><a class="dropdown-item" href="/admin/comite">Gestionar Comité</a></li>
+            <li><a class="dropdown-item" href="/admin/cuotas">Gestionar Cuotas</a></li>
+          </ul>
+        </li>
         {% endif %}
-    </form>
+      </ul>
+      <ul class="navbar-nav ms-auto">
+        {% if session.get('usuario') %}
+          <li class="nav-item d-flex align-items-center">
+            <span class="navbar-text text-white me-3">👤 {{ session['usuario'] }}</span>
+          </li>
+          <li class="nav-item"><a class="btn btn-outline-light btn-sm" href="/logout">Salir</a></li>
+        {% else %}
+          <li class="nav-item"><a class="btn btn-light btn-sm" href="/login">Login</a></li>
+        {% endif %}
+      </ul>
+    </div>
+  </div>
+</nav>
 
-    <!-- BOTÓN EXCEL -->
-    <div class="col-md-4 text-end">
-        <a
-          href="/estado-cuenta/excel{% if casa %}?casa={{ casa }}{% endif %}"
-          class="btn btn-lg btn-success"
-        >
-            📥 Descargar Excel
-        </a>
+<div class="container-fluid px-3 px-md-4 mt-4">
+
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div>
+        <h3 class="mb-0">💰 Estado de Cuenta</h3>
+        <p class="text-muted mb-0 small">Vista general de ingresos, gastos y aportes por casa.</p>
+    </div>
+    <div class="d-flex gap-2 flex-wrap">
+        <a href="/estado-cuenta/excel" class="btn btn-success btn-sm">📥 Descargar Excel</a>
+        {% if session.get('rol') == 'admin' %}
+        <a href="/admin/pago" class="btn btn-primary btn-sm">+ Registrar Pago</a>
+        {% endif %}
     </div>
 </div>
 
-{% if casa %}
-<div class="alert alert-warning">
-    📌 Mostrando estado de cuenta de la casa <strong>{{ casa }}</strong>
+<!-- ── RESUMEN FINANCIERO ── -->
+<div class="row g-3 mb-3">
+    <div class="col-6 col-md-4">
+        <div class="card border-0 shadow-sm text-center h-100" style="background:#d1fae5;">
+            <div class="card-body py-3">
+                <div class="fs-4 fw-bold text-success">${{ "%.2f"|format(ingresos|float) }}</div>
+                <div class="text-muted small">Ingresos totales</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-4">
+        <div class="card border-0 shadow-sm text-center h-100" style="background:#fee2e2;">
+            <div class="card-body py-3">
+                <div class="fs-4 fw-bold text-danger">${{ "%.2f"|format(gastos_total|float) }}</div>
+                <div class="text-muted small">Gastos ejecutados</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-md-4">
+        <div class="card border-0 shadow-sm text-center h-100" style="background:#dbeafe;">
+            <div class="card-body py-3">
+                <div class="fs-4 fw-bold text-primary">${{ "%.2f"|format(disponible|float) }}</div>
+                <div class="text-muted small">Disponible en caja</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── CUOTAS ACTIVAS ── -->
+{% if cuotas %}
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body pb-2">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+            <div class="section-title">📋 Cuotas / Aportes Activos</div>
+            {% if session.get('rol') == 'admin' %}
+            <a href="/admin/cuotas" class="btn btn-sm btn-outline-primary">⚙ Gestionar</a>
+            {% endif %}
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            {% for c in cuotas %}
+            <span class="badge bg-light text-dark border p-2" style="font-size:0.8rem;">
+                {{ c['descripcion'] }}
+                &nbsp;<strong class="text-success">${{ "%.2f"|format(c['monto']|float) }}</strong>
+                &nbsp;·&nbsp;Vence: {{ c['fecha_vencimiento'] }}
+                &nbsp;<span class="badge {% if c['tipo']=='extraoficial' %}bg-warning text-dark{% else %}bg-info text-dark{% endif %}">{{ c['tipo'] }}</span>
+            </span>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="alert alert-warning mb-3 py-2">
+    No hay cuotas activas definidas.
+    {% if session.get('rol') == 'admin' %}
+    <a href="/admin/cuotas" class="alert-link">Crear cuota</a>
+    {% endif %}
 </div>
 {% endif %}
 
-<!-- RESUMEN -->
-<div class="row text-center mb-4">
-    <div class="col-md-4">
-        <div class="alert alert-success">
-            Ingresos<br>
-            <strong>${{ ingresos }}</strong>
+<!-- ── TABLA 250 CASAS ── -->
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-2">
+            <div class="section-title">🏘 Estado por Casa (1–250)</div>
+            <div class="d-flex gap-3 flex-wrap align-items-center" style="font-size:0.75rem;">
+                <span><span class="legend-box" style="background:#d1fae5;border:1px solid #6ee7b7;"></span>Al día</span>
+                <span><span class="legend-box" style="background:#fef3c7;border:1px solid #fcd34d;"></span>Parcial</span>
+                <span><span class="legend-box" style="background:#fee2e2;border:1px solid #fca5a5;"></span>Debe</span>
+                <span><span class="legend-box" style="background:#f1f5f9;border:1px solid #cbd5e1;"></span>Sin pagos</span>
+            </div>
+        </div>
+        <p class="text-muted small mb-2">Haz clic en el número de casa para ver su estado detallado.</p>
+
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered mb-0" style="table-layout:fixed;">
+                <tbody>
+                    {% for row in range(25) %}
+                    <tr>
+                        {% for col in range(10) %}
+                        {% set num = row * 10 + col + 1 %}
+                        {% set pagado = pagos_por_casa.get(num, 0)|float %}
+                        {% set total_c = total_cuotas|float %}
+                        {% if total_c > 0 %}
+                            {% if pagado >= total_c %}
+                                {% set cls = 'house-al-dia' %}
+                            {% elif pagado > 0 %}
+                                {% set cls = 'house-parcial' %}
+                            {% else %}
+                                {% set cls = 'house-debe' %}
+                            {% endif %}
+                        {% else %}
+                            {% if pagado > 0 %}
+                                {% set cls = 'house-al-dia' %}
+                            {% else %}
+                                {% set cls = 'house-sin-info' %}
+                            {% endif %}
+                        {% endif %}
+                        <td style="width:10%;padding:2px;">
+                            <a class="house-btn {{ cls }}"
+                               href="#"
+                               onclick="verEstadoCasa({{ num }}); return false;"
+                               title="Casa {{ num }} – ${{ '%.2f'|format(pagado) }} pagado">
+                                {{ num }}
+                            </a>
+                        </td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
-    <div class="col-md-4">
-        <div class="alert alert-danger">
-            Gastos<br>
-            <strong>${{ gastos_total }}</strong>
+</div>
+
+<!-- ── GASTOS ── -->
+<div class="card border-0 shadow-sm mb-4">
+    <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+            <div class="section-title">🧾 Gastos Ejecutados</div>
+            {% if session.get('rol') == 'admin' %}
+            <a href="/admin/gasto" class="btn btn-sm btn-outline-danger">+ Registrar Gasto</a>
+            {% endif %}
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-bordered table-hover mb-0">
+                <thead class="table-light">
+                    <tr><th>Descripción</th><th>Monto</th><th>Fecha</th><th>Factura</th></tr>
+                </thead>
+                <tbody>
+                    {% for g in gastos %}
+                    <tr>
+                        <td>{{ g['descripcion'] }}</td>
+                        <td class="text-danger fw-bold">${{ "%.2f"|format(g['monto']|float) }}</td>
+                        <td>{{ g['fecha'] }}</td>
+                        <td>
+                            {% if g['factura'] %}
+                            <a href="{{ g['factura'] }}" target="_blank" class="btn btn-sm btn-outline-secondary py-0 px-1">Ver</a>
+                            {% else %}—{% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="4" class="text-center text-muted">No hay gastos registrados</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
-    <div class="col-md-4">
-        <div class="alert alert-info">
-            Disponible<br>
-            <strong>${{ disponible }}</strong>
+</div>
+
+<div class="mb-4"><a href="/" class="btn btn-secondary">⬅ Volver al inicio</a></div>
+
+</div><!-- /container -->
+
+<!-- ── MODAL ESTADO CASA ── -->
+<div class="modal fade" id="modalCasa" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white py-2">
+                <h5 class="modal-title" id="modalCasaTitulo">Estado de Cuenta – Casa</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="modalCasaCuerpo">
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="mt-2 text-muted">Cargando…</p>
+                </div>
+            </div>
+            <div class="modal-footer py-2">
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
+            </div>
         </div>
     </div>
 </div>
 
-<hr>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+var modalCasa = new bootstrap.Modal(document.getElementById('modalCasa'));
 
-<!-- PAGOS -->
-<h5>🏠 Aportes por Casa</h5>
+function verEstadoCasa(num) {
+    document.getElementById('modalCasaTitulo').textContent = 'Estado de Cuenta – Casa ' + num;
+    document.getElementById('modalCasaCuerpo').innerHTML = '<div class="text-center py-5"><div class="spinner-border text-primary"></div><p class="mt-3 text-muted">Cargando datos…</p></div>';
+    modalCasa.show();
 
-<div class="table-responsive">
-<table class="table table-bordered table-sm align-middle">
-    <thead class="table-light">
-        <tr>
-            <th>Casa</th>
-            <th>Monto</th>
-            <th>Fecha</th>
-            <th>Notas</th>
-            <th>Comprobante</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for p in pagos %}
-        <tr>
-            <td>{{ p['casa'] }}</td>
-            <td>${{ p['monto'] }}</td>
-            <td>{{ p['fecha'] }}</td>
-            <td class="text-wrap" style="max-width:300px">
-                {{ p['notas'] if p['notas'] else '—' }}
-            </td>
-            <td>
-                {% if p['comprobante'] %}
-                    <a href="{{ p['comprobante'] }}" target="_blank">
-                        Ver
-                    </a>
-                {% else %}
-                    —
-                {% endif %}
-            </td>
-        </tr>
-        {% else %}
-        <tr>
-            <td colspan="5" class="text-center text-muted">
-                No hay pagos registrados
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-</div>
+    fetch('/api/estado-casa/' + num)
+        .then(r => r.json())
+        .then(d => {
+            var esDeudor = d.total_debe > 0;
+            var colorEstado = esDeudor ? 'danger' : 'success';
+            var textoEstado = esDeudor
+                ? '⚠ Tiene un saldo pendiente de $' + d.total_debe.toFixed(2)
+                : '✅ Al día con todos los aportes';
 
-<hr>
+            // Cuotas pendientes
+            var pendHTML = '';
+            if (d.cuotas_pendientes && d.cuotas_pendientes.length > 0) {
+                pendHTML = '<h6 class="text-danger fw-bold mt-3">Cuotas sin pagar:</h6><ul class="list-group mb-2">';
+                d.cuotas_pendientes.forEach(function(c) {
+                    pendHTML += '<li class="list-group-item d-flex justify-content-between align-items-center py-2 px-3">'
+                        + '<span>' + c.descripcion + ' <span class="badge bg-secondary ms-1">' + c.tipo + '</span></span>'
+                        + '<span><span class="badge bg-danger">$' + c.monto.toFixed(2) + '</span>'
+                        + '<small class="text-muted ms-2">Vence: ' + c.fecha_vencimiento + '</small></span>'
+                        + '</li>';
+                });
+                pendHTML += '</ul>';
+            } else if (d.total_cuotas > 0) {
+                pendHTML = '<div class="alert alert-success py-2 mt-2">✅ Todas las cuotas están pagadas.</div>';
+            }
 
-<!-- GASTOS -->
-<h5>🧾 Gastos Ejecutados</h5>
+            // Historial de pagos
+            var pagosHTML = '';
+            if (d.pagos && d.pagos.length > 0) {
+                pagosHTML = '<h6 class="fw-bold mt-3">Historial de pagos:</h6>'
+                    + '<div class="table-responsive">'
+                    + '<table class="table table-sm table-bordered"><thead class="table-light">'
+                    + '<tr><th>Fecha</th><th>Monto</th><th>Cuota</th><th>Notas</th><th>Comprobante</th></tr>'
+                    + '</thead><tbody>';
+                d.pagos.forEach(function(p) {
+                    var comp = p.comprobante
+                        ? '<a href="' + p.comprobante + '" target="_blank" class="btn btn-sm btn-outline-secondary py-0 px-1">Ver</a>'
+                        : '—';
+                    pagosHTML += '<tr>'
+                        + '<td>' + (p.fecha || '—') + '</td>'
+                        + '<td class="text-success fw-bold">$' + p.monto.toFixed(2) + '</td>'
+                        + '<td>' + (p.cuota_desc || '—') + '</td>'
+                        + '<td>' + (p.notas || '—') + '</td>'
+                        + '<td>' + comp + '</td>'
+                        + '</tr>';
+                });
+                pagosHTML += '</tbody></table></div>';
+            } else {
+                pagosHTML = '<div class="alert alert-warning py-2 mt-2">Sin pagos registrados para esta casa.</div>';
+            }
 
-<div class="table-responsive">
-<table class="table table-bordered table-sm align-middle">
-    <thead class="table-light">
-        <tr>
-            <th>Descripción</th>
-            <th>Monto</th>
-            <th>Fecha</th>
-            <th>Factura</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for g in gastos %}
-        <tr>
-            <td>{{ g['descripcion'] }}</td>
-            <td>${{ g['monto'] }}</td>
-            <td>{{ g['fecha'] }}</td>
-            <td>
-                {% if g['factura'] %}
-                    <a href="{{ g['factura'] }}" target="_blank">
-                        Ver
-                    </a>
-                {% else %}
-                    —
-                {% endif %}
-            </td>
-        </tr>
-        {% else %}
-        <tr>
-            <td colspan="4" class="text-center text-muted">
-                No hay gastos registrados
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-</div>
-
-<div class="mt-4">
-    <a href="/" class="btn btn-lg btn-secondary">
-        ⬅ Volver al inicio
-    </a>
-</div>
-
-{% endblock %}
+            document.getElementById('modalCasaCuerpo').innerHTML =
+                '<div class="row g-2 mb-3">'
+                + '<div class="col-4 text-center"><div class="rounded p-2" style="background:#d1fae5;">'
+                + '<div class="fs-5 fw-bold text-success">$' + d.total_pagado.toFixed(2) + '</div>'
+                + '<div class="small text-muted">Pagado</div></div></div>'
+                + '<div class="col-4 text-center"><div class="rounded p-2" style="background:#dbeafe;">'
+                + '<div class="fs-5 fw-bold text-primary">$' + d.total_cuotas.toFixed(2) + '</div>'
+                + '<div class="small text-muted">Total cuotas</div></div></div>'
+                + '<div class="col-4 text-center"><div class="rounded p-2" style="background:' + (esDeudor?'#fee2e2':'#d1fae5') + ';">'
+                + '<div class="fs-5 fw-bold text-' + colorEstado + '">$' + d.total_debe.toFixed(2) + '</div>'
+                + '<div class="small text-muted">Pendiente</div></div></div>'
+                + '</div>'
+                + '<div class="alert alert-' + colorEstado + ' py-2">' + textoEstado + '</div>'
+                + pendHTML
+                + pagosHTML;
+        })
+        .catch(function() {
+            document.getElementById('modalCasaCuerpo').innerHTML =
+                '<div class="alert alert-danger">Error al cargar datos. Verifique su conexión.</div>';
+        });
+}
+</script>
+</body>
+</html>

@@ -1,105 +1,93 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Administrar Gastos</title>
-
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
-          rel="stylesheet">
+    <meta charset="UTF-8">
+    <title>Registrar Gasto</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
+<body class="bg-light">
 
-<body class="container mt-4 fs-5">
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+  <div class="container-fluid">
+    <a class="navbar-brand fw-bold" href="/">Barriada Transparente</a>
+    <div class="navbar-nav ms-auto">
+      <a class="btn btn-outline-light btn-sm" href="/estado-cuenta">← Estado de Cuenta</a>
+    </div>
+  </div>
+</nav>
 
-<h3>🧾 Registrar Gasto</h3>
+<div class="container mt-4" style="max-width:760px;">
 
-<form method="post"
-      enctype="multipart/form-data"
-      class="mb-5"
-      autocomplete="off">
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-danger text-white"><h5 class="mb-0">🧾 Registrar Nuevo Gasto</h5></div>
+        <div class="card-body">
+            <form method="post" enctype="multipart/form-data">
+                <div class="row g-3">
+                    <div class="col-md-8">
+                        <label class="form-label fw-semibold">Descripción</label>
+                        <input class="form-control" name="descripcion"
+                               placeholder="Ej: Reparación luminaria, limpieza…" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-semibold">Monto ($)</label>
+                        <input class="form-control" name="monto" type="number" step="0.01" required>
+                    </div>
+                    <div class="col-md-12">
+                        <label class="form-label fw-semibold">Factura (PDF o imagen)</label>
+                        <input class="form-control" type="file" name="factura" accept="application/pdf,image/*">
+                    </div>
+                </div>
+                <div class="mt-3 d-flex gap-2">
+                    <button class="btn btn-danger">💾 Registrar Gasto</button>
+                    <a href="/estado-cuenta" class="btn btn-secondary">Cancelar</a>
+                </div>
+            </form>
+        </div>
+    </div>
 
-    <label class="form-label">Descripción</label>
-    <input class="form-control mb-2"
-           name="descripcion"
-           placeholder="Ej: Reparación luminaria, limpieza, proveedor X"
-           autocomplete="off"
-           required>
+    <!-- LISTA DE GASTOS CON ELIMINAR -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-light"><h6 class="mb-0">📋 Gastos Registrados</h6></div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover table-bordered mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Descripción</th>
+                            <th>Monto</th>
+                            <th>Fecha</th>
+                            <th>Factura</th>
+                            <th class="text-center">Eliminar</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for g in gastos %}
+                        <tr>
+                            <td>{{ g['descripcion'] }}</td>
+                            <td class="text-danger fw-bold">${{ "%.2f"|format(g['monto']|float) }}</td>
+                            <td>{{ g['fecha'] }}</td>
+                            <td>
+                                {% if g['factura'] %}
+                                <a href="{{ g['factura'] }}" target="_blank" class="btn btn-sm btn-outline-secondary py-0 px-1">Ver</a>
+                                {% else %}—{% endif %}
+                            </td>
+                            <td class="text-center">
+                                <form method="post" action="/admin/delete/gasto/{{ g['id'] }}"
+                                      onsubmit="return confirm('¿Eliminar este gasto?');">
+                                    <button class="btn btn-sm btn-danger py-0 px-2">🗑</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="5" class="text-center text-muted py-3">No hay gastos registrados.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 
-    <label class="form-label">Monto</label>
-    <input class="form-control mb-2"
-           name="monto"
-           type="number"
-           step="0.01"
-           autocomplete="off"
-           required>
-
-    <label class="form-label">Factura (PDF o imagen)</label>
-    <input class="form-control mb-3"
-           type="file"
-           name="factura"
-           accept="application/pdf,image/*">
-
-    <button class="btn btn-lg btn-danger">Registrar Gasto</button>
-    <a href="/estado-cuenta" class="btn btn-lg btn-secondary">Cancelar</a>
-</form>
-
-<hr>
-
-<h4>📄 Gastos Registrados</h4>
-
-<div class="table-responsive">
-<table class="table table-striped table-bordered align-middle">
-    <thead class="table-dark">
-        <tr>
-            <th>Descripción</th>
-            <th>Monto</th>
-            <th>Fecha</th>
-            <th>Factura</th>
-            <th>Acciones</th>
-        </tr>
-    </thead>
-    <tbody>
-
-    {% if data %}
-        {% for g in data %}
-        <tr>
-            <td>{{ g['descripcion'] }}</td>
-            <td>${{ g['monto'] }}</td>
-            <td>{{ g['fecha'] }}</td>
-            <td>
-                {% if g['factura'] %}
-                    <a href="{{ g['factura'] }}" target="_blank">
-                        Ver
-                    </a>
-                {% else %}
-                    —
-                {% endif %}
-            </td>
-            <td>
-                {% if session.get('rol') == 'admin' %}
-                <form method="POST"
-                      action="/admin/delete/gasto/{{ g['id'] }}"
-                      onsubmit="return confirm('¿Eliminar este gasto?');"
-                      style="display:inline;">
-                    <button class="btn btn-danger btn-sm">
-                        Eliminar
-                    </button>
-                </form>
-                {% endif %}
-            </td>
-        </tr>
-        {% endfor %}
-    {% else %}
-        <tr>
-            <td colspan="5" class="text-center text-muted">
-                No hay gastos registrados
-            </td>
-        </tr>
-    {% endif %}
-
-    </tbody>
-</table>
 </div>
-
 </body>
 </html>

@@ -1,17 +1,18 @@
 from flask import (
     Flask, render_template, request,
-    redirect, session, Response
+    redirect, session, Response, jsonify
 )
 from openpyxl import Workbook
 import io
 import psycopg2
 import psycopg2.extras
 import os
-from datetime import datetime
+from datetime import datetime, date
 from functools import wraps
-from supabase import create_client
-import uuid
 
+# Cloudinary
+import cloudinary
+import cloudinary.uploader
 
 # ==========================================================
 # CONFIGURACIÓN GENERAL
@@ -22,13 +23,16 @@ app.secret_key = 'barriada-segura'
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-SUPABASE_BUCKET = os.environ.get("SUPABASE_BUCKET")
+# ==========================================================
+# CLOUDINARY CONFIG
+# ==========================================================
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-TOTAL_CASAS = 250
-
+cloudinary.config(
+    cloud_name=os.environ.get("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.environ.get("CLOUDINARY_API_KEY"),
+    api_secret=os.environ.get("CLOUDINARY_API_SECRET"),
+    secure=True
+)
 
 # ==========================================================
 # CONTEXTO GLOBAL PARA TEMPLATES
@@ -90,7 +94,8 @@ def init_db():
         monto NUMERIC,
         fecha DATE,
         comprobante TEXT,
-        notas TEXT
+        notas TEXT,
+        cuota_id INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS gastos (
@@ -107,25 +112,27 @@ def init_db():
         password TEXT,
         rol TEXT
     );
-    
+
     CREATE TABLE IF NOT EXISTS cuotas (
         id SERIAL PRIMARY KEY,
-        nombre TEXT NOT NULL,
+        descripcion TEXT NOT NULL,
         monto NUMERIC NOT NULL,
-        fecha DATE
-    );
-
-    CREATE TABLE IF NOT EXISTS cuota_pagos (
-        id SERIAL PRIMARY KEY,
-        cuota_id INTEGER REFERENCES cuotas(id) ON DELETE CASCADE,
-        casa INTEGER,
-        monto NUMERIC,
-        comprobante TEXT,
-        fecha DATE
+        fecha_vencimiento DATE NOT NULL,
+        tipo TEXT DEFAULT 'mensual',
+        activa BOOLEAN DEFAULT TRUE
     );
     """)
     conn.commit()
+
+    # Add cuota_id column to pagos if it does not exist
+    try:
+        cur.execute("ALTER TABLE pagos ADD COLUMN IF NOT EXISTS cuota_id INTEGER;")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+
     conn.close()
+
 
 def crear_admin_si_no_existe():
     cur, conn = get_cursor()
@@ -137,24 +144,10 @@ def crear_admin_si_no_existe():
         )
         conn.commit()
     conn.close()
-    
-def ensure_pagos_notas_column():
-    cur, conn = get_cursor()
-    cur.execute("""
-        ALTER TABLE pagos
-        ADD COLUMN IF NOT EXISTS notas TEXT
-    """)
-    conn.commit()
-    conn.close()
 
-
-# ==========================================================
-# INICIALIZACIÓN
-# ==========================================================
 
 init_db()
 crear_admin_si_no_existe()
-ensure_pagos_notas_column()
 
 # ==========================================================
 # SEGURIDAD
@@ -167,31 +160,6 @@ def admin_required(f):
             return redirect('/login')
         return f(*args, **kwargs)
     return wrapper
-
-
-def subir_a_supabase(file, carpeta):
-    # Extensión segura
-    ext = file.filename.rsplit('.', 1)[-1].lower()
-
-    # Nombre único por archivo
-    nombre = f"{carpeta}/{uuid.uuid4()}.{ext}"
-
-    # Leer contenido UNA sola vez
-    contenido = file.read()
-
-    # Subir a Supabase Storage
-    supabase.storage.from_(SUPABASE_BUCKET).upload(
-        nombre,
-        contenido,
-        file_options={
-            "content-type": file.mimetype,
-            "upsert": False
-        }
-    )
-
-    # URL pública
-    return supabase.storage.from_(SUPABASE_BUCKET).get_public_url(nombre)
-
 
 # ==========================================================
 # RUTAS PÚBLICAS
@@ -213,31 +181,10 @@ def minutas():
 
 @app.route('/estado-cuenta')
 def estado_cuenta():
-    casa = request.args.get('casa')
     cur, conn = get_cursor()
 
-    # PAGOS
-    if casa:
-        cur.execute(
-            "SELECT * FROM pagos WHERE casa=%s ORDER BY fecha DESC",
-            (casa,)
-        )
-    else:
-        cur.execute("SELECT * FROM pagos ORDER BY fecha DESC")
-
-    pagos = cur.fetchall()
-
-    # INGRESOS
-    if casa:
-        cur.execute(
-            "SELECT COALESCE(SUM(monto),0) AS total FROM pagos WHERE casa=%s",
-            (casa,)
-        )
-    else:
-        cur.execute(
-            "SELECT COALESCE(SUM(monto),0) AS total FROM pagos"
-        )
-
+    # INGRESOS TOTALES
+    cur.execute("SELECT COALESCE(SUM(monto),0) AS total FROM pagos")
     ingresos = cur.fetchone()['total']
 
     # GASTOS
@@ -247,17 +194,101 @@ def estado_cuenta():
     cur.execute("SELECT COALESCE(SUM(monto),0) AS total FROM gastos")
     egresos = cur.fetchone()['total']
 
+    # CUOTAS ACTIVAS
+    cur.execute("SELECT * FROM cuotas WHERE activa=TRUE ORDER BY fecha_vencimiento DESC")
+    cuotas = cur.fetchall()
+
+    # PAGOS TOTALES POR CASA
+    cur.execute("""
+        SELECT casa, COALESCE(SUM(monto),0) as total_pagado
+        FROM pagos GROUP BY casa
+    """)
+    pagos_por_casa_raw = cur.fetchall()
+    pagos_por_casa = {}
+    for r in pagos_por_casa_raw:
+        try:
+            key = int(r['casa'])
+        except (ValueError, TypeError):
+            key = r['casa']
+        pagos_por_casa[key] = float(r['total_pagado'])
+
+    # Total cuotas activas
+    cur.execute("SELECT COALESCE(SUM(monto),0) as total FROM cuotas WHERE activa=TRUE")
+    total_cuotas = float(cur.fetchone()['total'] or 0)
+
     conn.close()
 
     return render_template(
         'estado_cuenta.html',
-        pagos=pagos,
         gastos=gastos,
         ingresos=ingresos,
         gastos_total=egresos,
         disponible=ingresos - egresos,
-        casa=casa
+        cuotas=cuotas,
+        pagos_por_casa=pagos_por_casa,
+        total_cuotas=total_cuotas
     )
+
+
+@app.route('/api/estado-casa/<int:numero_casa>')
+def api_estado_casa(numero_casa):
+    """API JSON: estado de cuenta de una casa específica"""
+    cur, conn = get_cursor()
+
+    casa_str = str(numero_casa)
+
+    # Pagos de esta casa
+    cur.execute("""
+        SELECT p.id, p.casa, p.monto, p.fecha, p.notas, p.comprobante,
+               c.descripcion as cuota_desc
+        FROM pagos p
+        LEFT JOIN cuotas c ON p.cuota_id = c.id
+        WHERE p.casa = %s
+        ORDER BY p.fecha DESC
+    """, (casa_str,))
+    pagos = []
+    for r in cur.fetchall():
+        row = dict(r)
+        if row.get('fecha'):
+            row['fecha'] = str(row['fecha'])
+        row['monto'] = float(row['monto'])
+        pagos.append(row)
+
+    # Total pagado
+    cur.execute("SELECT COALESCE(SUM(monto),0) as total FROM pagos WHERE casa=%s", (casa_str,))
+    total_pagado = float(cur.fetchone()['total'])
+
+    # Cuotas activas
+    cur.execute("SELECT * FROM cuotas WHERE activa=TRUE ORDER BY fecha_vencimiento")
+    cuotas_activas = []
+    for r in cur.fetchall():
+        row = dict(r)
+        if row.get('fecha_vencimiento'):
+            row['fecha_vencimiento'] = str(row['fecha_vencimiento'])
+        row['monto'] = float(row['monto'])
+        cuotas_activas.append(row)
+
+    total_cuotas = sum(c['monto'] for c in cuotas_activas)
+
+    # Cuotas pagadas (por cuota_id)
+    cur.execute(
+        "SELECT DISTINCT cuota_id FROM pagos WHERE casa=%s AND cuota_id IS NOT NULL",
+        (casa_str,)
+    )
+    cuotas_pagadas_ids = {r['cuota_id'] for r in cur.fetchall()}
+
+    cuotas_pendientes = [c for c in cuotas_activas if c['id'] not in cuotas_pagadas_ids]
+
+    conn.close()
+
+    return jsonify({
+        'casa': numero_casa,
+        'total_pagado': total_pagado,
+        'total_debe': max(0, total_cuotas - total_pagado),
+        'total_cuotas': total_cuotas,
+        'pagos': pagos,
+        'cuotas_pendientes': cuotas_pendientes
+    })
 
 
 @app.route('/comite')
@@ -284,14 +315,12 @@ def sugerencias():
 
     if request.method == 'POST':
         texto = request.form.get('texto')
-
         if texto:
             cur.execute(
                 "INSERT INTO sugerencias (texto, fecha) VALUES (%s, %s)",
                 (texto, datetime.now())
             )
             conn.commit()
-
         conn.close()
         return redirect('/sugerencias')
 
@@ -304,124 +333,84 @@ def sugerencias():
 
 @app.route('/estado-cuenta/excel')
 def estado_cuenta_excel():
-    casa = request.args.get('casa')
     cur, conn = get_cursor()
 
-    # =========================
-    # PAGOS
-    # =========================
-    if casa:
-        cur.execute(
-            "SELECT casa, monto, fecha, comprobante, notas FROM pagos WHERE casa=%s ORDER BY fecha DESC",
-            (casa,)
-        )
-    else:
-        cur.execute(
-            "SELECT casa, monto, fecha, comprobante, notas FROM pagos ORDER BY fecha DESC"
-        )
-
+    cur.execute("SELECT * FROM pagos ORDER BY fecha DESC")
     pagos = cur.fetchall()
-
-    # =========================
-    # GASTOS
-    # =========================
-    cur.execute(
-        "SELECT descripcion, monto, fecha, factura FROM gastos ORDER BY fecha DESC"
-    )
+    cur.execute("SELECT * FROM gastos ORDER BY fecha DESC")
     gastos = cur.fetchall()
-
     conn.close()
 
-    # =========================
-    # EXCEL
-    # =========================
     wb = Workbook()
-
-    # --- Hoja Pagos ---
     ws = wb.active
     ws.title = "Pagos"
     ws.append(["Casa", "Monto", "Fecha", "Notas", "Comprobante"])
 
     for p in pagos:
-        ws.append([
-            p['casa'],
-            float(p['monto']),
-            str(p['fecha']),
-            p['notas'] or "",
-            p['comprobante'] or ""
-        ])
+        ws.append([p['casa'], float(p['monto']), str(p['fecha']),
+                   p['notas'] or "", p['comprobante'] or ""])
 
-    # --- Hoja Gastos ---
     ws2 = wb.create_sheet("Gastos")
     ws2.append(["Descripción", "Monto", "Fecha", "Factura"])
 
     for g in gastos:
-        ws2.append([
-            g['descripcion'],
-            float(g['monto']),
-            str(g['fecha']),
-            g['factura'] or ""
-        ])
+        ws2.append([g['descripcion'], float(g['monto']), str(g['fecha']),
+                    g['factura'] or ""])
 
-    # =========================
-    # RESPUESTA
-    # =========================
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
 
-    nombre = f"estado_cuenta_{casa}.xlsx" if casa else "estado_cuenta_general.xlsx"
-
     return Response(
         output,
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={
-            "Content-Disposition": f"attachment; filename={nombre}"
-        }
+        headers={"Content-Disposition": "attachment; filename=estado_cuenta_general.xlsx"}
     )
 
 # ==========================================================
-# 🔐 PAGO – SOLO ADMIN
+# ADMIN – PAGO
 # ==========================================================
 
 @app.route('/admin/pago', methods=['GET', 'POST'])
 @admin_required
 def admin_pago():
-    cur, conn = get_cursor()
-
     if request.method == 'POST':
         casa = request.form['casa']
         monto = request.form['monto']
+        cuota_id = request.form.get('cuota_id') or None
         archivo = request.files['comprobante']
 
         url = None
         if archivo and archivo.filename:
-            # 📦 Subida a Supabase Storage
-            url = subir_a_supabase(archivo, "pagos")
+            result = cloudinary.uploader.upload(
+                archivo,
+                resource_type="auto",
+                folder="barriada/pagos"
+            )
+            url = result["secure_url"]
 
+        cur, conn = get_cursor()
         cur.execute("""
-            INSERT INTO pagos (casa, monto, fecha, comprobante, notas)
-            VALUES (%s, %s, %s, %s, %s)
-        """, (
-            casa,
-            monto,
-            datetime.now().date(),
-            url,
-            request.form.get('notas')
-        ))
+            INSERT INTO pagos (casa, monto, fecha, comprobante, notas, cuota_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (casa, monto, datetime.now().date(), url,
+              request.form.get('notas'), cuota_id))
         conn.commit()
+        conn.close()
 
-        return redirect('/admin/pago')
+        return redirect('/estado-cuenta')
 
-    # 🔑 listado de pagos
+    cur, conn = get_cursor()
     cur.execute("SELECT * FROM pagos ORDER BY fecha DESC")
-    data = cur.fetchall()
+    pagos = cur.fetchall()
+    cur.execute("SELECT * FROM cuotas WHERE activa=TRUE ORDER BY fecha_vencimiento")
+    cuotas = cur.fetchall()
     conn.close()
+    return render_template('admin_pago.html', pagos=pagos, cuotas=cuotas)
 
-    return render_template('admin_pago.html', data=data)
 
 # ==========================================================
-# ADMINISTRACIÓN (MINUTA / GASTO / COMITÉ)
+# ADMIN – MINUTA
 # ==========================================================
 
 @app.route('/admin/minuta', methods=['GET', 'POST'])
@@ -434,7 +423,11 @@ def admin_minuta():
 
         url = None
         if archivo and archivo.filename:
-            url = subir_a_supabase(archivo, "minutas")
+            url = cloudinary.uploader.upload(
+                archivo,
+                resource_type="auto",
+                folder="barriada/minutas"
+            )["secure_url"]
 
         cur, conn = get_cursor()
         cur.execute("""
@@ -444,15 +437,18 @@ def admin_minuta():
         conn.commit()
         conn.close()
 
-        return redirect('/admin/minuta')
+        return redirect('/minutas')
 
     cur, conn = get_cursor()
     cur.execute("SELECT * FROM minutas ORDER BY fecha DESC")
-    data = cur.fetchall()
+    minutas_list = cur.fetchall()
     conn.close()
+    return render_template('admin_minuta.html', minutas=minutas_list)
 
-    return render_template('admin_minuta.html', data=data)
 
+# ==========================================================
+# ADMIN – GASTO
+# ==========================================================
 
 @app.route('/admin/gasto', methods=['GET', 'POST'])
 @admin_required
@@ -464,8 +460,11 @@ def admin_gasto():
 
         url = None
         if archivo and archivo.filename:
-            # 📦 Subida a Supabase Storage
-            url = subir_a_supabase(archivo, "gastos")
+            url = cloudinary.uploader.upload(
+                archivo,
+                resource_type="auto",
+                folder="barriada/gastos"
+            )["secure_url"]
 
         cur, conn = get_cursor()
         cur.execute("""
@@ -475,9 +474,18 @@ def admin_gasto():
         conn.commit()
         conn.close()
 
-        return redirect('/admin/gasto')
+        return redirect('/estado-cuenta')
 
-    return render_template('admin_gasto.html')
+    cur, conn = get_cursor()
+    cur.execute("SELECT * FROM gastos ORDER BY fecha DESC")
+    gastos = cur.fetchall()
+    conn.close()
+    return render_template('admin_gasto.html', gastos=gastos)
+
+
+# ==========================================================
+# ADMIN – COMITÉ
+# ==========================================================
 
 @app.route('/admin/comite', methods=['GET', 'POST'])
 @admin_required
@@ -490,8 +498,11 @@ def admin_comite():
 
         url = None
         if archivo and archivo.filename:
-            # 📦 Subida a Supabase Storage
-            url = subir_a_supabase(archivo, "comite")
+            url = cloudinary.uploader.upload(
+                archivo,
+                resource_type="image",
+                folder="barriada/comite"
+            )["secure_url"]
 
         cur, conn = get_cursor()
         cur.execute("""
@@ -501,17 +512,46 @@ def admin_comite():
         conn.commit()
         conn.close()
 
-        return redirect('/admin/comite')
+        return redirect('/comite')
 
     cur, conn = get_cursor()
     cur.execute("SELECT * FROM comite ORDER BY nombre")
-    data = cur.fetchall()
+    miembros = cur.fetchall()
     conn.close()
+    return render_template('admin_comite.html', miembros=miembros)
 
-    return render_template('admin_comite.html', data=data)
 
 # ==========================================================
-# 🗑️ DELETE – SOLO ADMIN
+# ADMIN – CUOTAS
+# ==========================================================
+
+@app.route('/admin/cuotas', methods=['GET', 'POST'])
+@admin_required
+def admin_cuotas():
+    cur, conn = get_cursor()
+
+    if request.method == 'POST':
+        descripcion = request.form['descripcion']
+        monto = request.form['monto']
+        fecha_vencimiento = request.form['fecha_vencimiento']
+        tipo = request.form.get('tipo', 'mensual')
+
+        cur.execute("""
+            INSERT INTO cuotas (descripcion, monto, fecha_vencimiento, tipo, activa)
+            VALUES (%s, %s, %s, %s, TRUE)
+        """, (descripcion, monto, fecha_vencimiento, tipo))
+        conn.commit()
+        conn.close()
+        return redirect('/admin/cuotas')
+
+    cur.execute("SELECT * FROM cuotas ORDER BY fecha_vencimiento DESC")
+    cuotas = cur.fetchall()
+    conn.close()
+    return render_template('admin_cuotas.html', cuotas=cuotas)
+
+
+# ==========================================================
+# DELETE – SOLO ADMIN
 # ==========================================================
 
 @app.route('/admin/delete/pago/<int:id>', methods=['POST'])
@@ -531,7 +571,7 @@ def delete_minuta(id):
     cur.execute("DELETE FROM minutas WHERE id=%s", (id,))
     conn.commit()
     conn.close()
-    return redirect('/minutas')
+    return redirect('/admin/minuta')
 
 
 @app.route('/admin/delete/gasto/<int:id>', methods=['POST'])
@@ -541,7 +581,7 @@ def delete_gasto(id):
     cur.execute("DELETE FROM gastos WHERE id=%s", (id,))
     conn.commit()
     conn.close()
-    return redirect('/estado-cuenta')
+    return redirect('/admin/gasto')
 
 
 @app.route('/admin/delete/comite/<int:id>', methods=['POST'])
@@ -551,7 +591,7 @@ def delete_comite(id):
     cur.execute("DELETE FROM comite WHERE id=%s", (id,))
     conn.commit()
     conn.close()
-    return redirect('/comite')
+    return redirect('/admin/comite')
 
 
 @app.route('/admin/delete/requerimiento/<int:id>', methods=['POST'])
@@ -563,180 +603,16 @@ def delete_requerimiento(id):
     conn.close()
     return redirect('/requerimientos')
 
-    
-@app.route('/admin/cuota', methods=['GET', 'POST'])
+
+@app.route('/admin/delete/cuota/<int:id>', methods=['POST'])
 @admin_required
-def admin_cuota():
-    if request.method == 'POST':
-        nombre = request.form['nombre']
-        monto = request.form['monto']
-
-        cur, conn = get_cursor()
-        cur.execute("""
-            INSERT INTO cuotas (nombre, monto, fecha)
-            VALUES (%s, %s, %s)
-        """, (nombre, monto, datetime.now().date()))
-        conn.commit()
-        conn.close()
-
-        return redirect('/admin/cuotas')
-
-    return render_template('admin_cuota.html')
-
-
-@app.route('/admin/cuotas')
-@admin_required
-def admin_cuotas():
+def delete_cuota(id):
     cur, conn = get_cursor()
-    cur.execute("SELECT * FROM cuotas ORDER BY fecha DESC")
-    data = cur.fetchall()
-    conn.close()
-
-    return render_template('admin_cuotas.html', data=data)
-
-
-@app.route('/admin/cuota/<int:cuota_id>')
-@admin_required
-def admin_cuota_detalle(cuota_id):
-    cur, conn = get_cursor()
-
-    cur.execute("SELECT * FROM cuotas WHERE id=%s", (cuota_id,))
-    cuota = cur.fetchone()
-
-    cur.execute("""
-        SELECT casa, monto, comprobante
-        FROM cuota_pagos
-        WHERE cuota_id=%s
-    """, (cuota_id,))
-    pagos = {p['casa']: p for p in cur.fetchall()}
-    conn.close()
-
-    casas = []
-    for i in range(1, TOTAL_CASAS + 1):
-        casas.append({
-            "numero": i,
-            "pago": pagos.get(i)
-        })
-
-    return render_template(
-        'admin_cuota_detalle.html',
-        cuota=cuota,
-        casas=casas
-    )
-
-
-def get_cuota(cuota_id):
-    cur, conn = get_cursor()
-    cur.execute("SELECT * FROM cuotas WHERE id=%s", (cuota_id,))
-    cuota = cur.fetchone()
-    conn.close()
-    return cuota
-
-
-def get_casas_con_pago(cuota_id):
-    cur, conn = get_cursor()
-    cur.execute("""
-        SELECT casa, monto, comprobante
-        FROM cuota_pagos
-        WHERE cuota_id=%s
-    """, (cuota_id,))
-    pagos = {p['casa']: p for p in cur.fetchall()}
-    conn.close()
-
-    casas = []
-    for i in range(1, TOTAL_CASAS + 1):
-        casas.append({
-            "numero": i,
-            "pago": pagos.get(i)
-        })
-    return casas
-
-@app.route('/admin/cuota/<int:cuota_id>/pagar', methods=['POST'])
-@admin_required
-def pagar_cuota(cuota_id):
-    casa = int(request.form['casa'])
-    monto = request.form['monto']
-    archivo = request.files['comprobante']
-
-    url = None
-    if archivo and archivo.filename:
-        url = subir_a_supabase(archivo, "cuotas")
-
-    cur, conn = get_cursor()
-    cur.execute("""
-        INSERT INTO cuota_pagos (cuota_id, casa, monto, comprobante, fecha)
-        VALUES (%s, %s, %s, %s, %s)
-    """, (
-        cuota_id,
-        casa,
-        monto,
-        url,
-        datetime.now().date()
-    ))
+    cur.execute("DELETE FROM cuotas WHERE id=%s", (id,))
     conn.commit()
     conn.close()
+    return redirect('/admin/cuotas')
 
-    return redirect(f'/admin/cuota/{cuota_id}')
-
-@app.route('/estado-cuenta/casa')
-def estado_cuenta_por_casa():
-    cur, conn = get_cursor()
-
-    # Total pagado por casa (todas las cuotas)
-    cur.execute("""
-        SELECT casa, COALESCE(SUM(monto),0) AS total_pagado
-        FROM cuota_pagos
-        GROUP BY casa
-        ORDER BY casa
-    """)
-    pagos = {p['casa']: float(p['total_pagado']) for p in cur.fetchall()}
-
-    # Total esperado (suma de todas las cuotas)
-    cur.execute("SELECT COALESCE(SUM(monto),0) AS total FROM cuotas")
-    total_cuotas = float(cur.fetchone()['total'])
-
-    conn.close()
-
-    casas = []
-    for i in range(1, TOTAL_CASAS + 1):
-        pagado = pagos.get(i, 0)
-        casas.append({
-            'casa': i,
-            'pagado': round(pagado, 2),
-            'pendiente': round(total_cuotas - pagado, 2)
-        })
-
-    return render_template(
-        'estado_cuenta_casa.html',
-        casas=casas,
-        total_cuotas=round(total_cuotas, 2)
-    )
-
-@app.route('/admin/cuota/<int:cuota_id>/estado')
-@admin_required
-def estado_cuenta_cuota(cuota_id):
-    cuota = get_cuota(cuota_id)
-    casas = get_casas_con_pago(cuota_id)
-
-    total_esperado = TOTAL_CASAS * float(cuota['monto'])
-    total_pagado = sum(
-        float(c['pago']['monto'])
-        for c in casas if c['pago']
-    )
-
-    resumen = {
-        'total_casas': TOTAL_CASAS,
-        'total_esperado': round(total_esperado, 2),
-        'total_pagado': round(total_pagado, 2),
-        'total_pendiente': round(total_esperado - total_pagado, 2)
-    }
-
-    return render_template(
-        'admin_cuota_estado.html',
-        cuota=cuota,
-        casas=casas,
-        resumen=resumen
-    )
 
 # ==========================================================
 # LOGIN / LOGOUT

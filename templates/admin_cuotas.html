@@ -1,64 +1,124 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <title>Cuotas</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link
-      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
-      rel="stylesheet">
+    <meta charset="UTF-8">
+    <title>Gestionar Cuotas</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
+<body class="bg-light">
 
-<body class="container mt-4 fs-5">
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+  <div class="container-fluid">
+    <a class="navbar-brand fw-bold" href="/">Barriada Transparente</a>
+    <div class="navbar-nav ms-auto">
+      <a class="btn btn-outline-light btn-sm" href="/estado-cuenta">← Estado de Cuenta</a>
+    </div>
+  </div>
+</nav>
 
-<h3>📋 Cuotas Registradas</h3>
+<div class="container mt-4" style="max-width:800px;">
 
-<div class="mb-3">
-    <a href="/admin/cuota" class="btn btn-lg btn-success">
-        ➕ Nueva cuota
-    </a>
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-success text-white">
+            <h5 class="mb-0">📋 Crear Nueva Cuota / Aporte</h5>
+        </div>
+        <div class="card-body">
+            <p class="text-muted small mb-3">
+                Las cuotas mensuales fijas tienen dos fechas de pago: el <strong>día 15</strong> (primera cuota del mes)
+                y el <strong>día 30</strong> (o 28 en febrero). También puede crear aportes extraoficiales
+                (ej: reparación bomba de agua $5, poda de árboles $2, etc.).
+            </p>
+            <form method="post">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold">Descripción</label>
+                        <input class="form-control" name="descripcion"
+                               placeholder="Ej: Cuota enero (día 15), Reparación bomba agua…" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold">Monto por casa ($)</label>
+                        <input class="form-control" name="monto" type="number" step="0.01" min="0.01" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-semibold">Tipo</label>
+                        <select class="form-select" name="tipo">
+                            <option value="mensual">Mensual</option>
+                            <option value="extraoficial">Extraoficial</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label fw-semibold">Fecha de vencimiento</label>
+                        <input class="form-control" type="date" name="fecha_vencimiento" required>
+                        <div class="form-text">Cuotas mensuales: día 15 ó 30 del mes.</div>
+                    </div>
+                </div>
+                <div class="mt-3 d-flex gap-2">
+                    <button class="btn btn-success">💾 Crear Cuota</button>
+                    <a href="/estado-cuenta" class="btn btn-secondary">Cancelar</a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- LISTA DE CUOTAS CON ELIMINAR -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">📋 Cuotas Definidas</h6>
+            <span class="badge bg-primary">{{ cuotas|length }} total</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-hover table-bordered mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Descripción</th>
+                            <th>Monto/casa</th>
+                            <th>Vencimiento</th>
+                            <th>Tipo</th>
+                            <th>Estado</th>
+                            <th class="text-center">Eliminar</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for c in cuotas %}
+                        <tr class="{{ 'table-secondary' if not c['activa'] else '' }}">
+                            <td>{{ c['descripcion'] }}</td>
+                            <td class="fw-bold text-success">${{ "%.2f"|format(c['monto']|float) }}</td>
+                            <td>{{ c['fecha_vencimiento'] }}</td>
+                            <td>
+                                <span class="badge {% if c['tipo']=='extraoficial' %}bg-warning text-dark{% else %}bg-info text-dark{% endif %}">
+                                    {{ c['tipo'] }}
+                                </span>
+                            </td>
+                            <td>
+                                {% if c['activa'] %}
+                                <span class="badge bg-success">Activa</span>
+                                {% else %}
+                                <span class="badge bg-secondary">Inactiva</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <form method="post" action="/admin/delete/cuota/{{ c['id'] }}"
+                                      onsubmit="return confirm('¿Eliminar la cuota «{{ c['descripcion'] }}»? Esta acción no se puede deshacer.');">
+                                    <button class="btn btn-sm btn-danger py-0 px-2">🗑</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="6" class="text-center text-muted py-3">No hay cuotas definidas.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="alert alert-info mt-3 py-2 small">
+        💡 <strong>Tip:</strong> Cree dos cuotas mensuales separadas para las fechas del día 15 y del día 30 (o 28 en febrero).
+        Para gastos extraordinarios, use el tipo <em>extraoficial</em> con la descripción y el monto por casa.
+        El color de cada casa en el Estado de Cuenta refleja si ha cubierto el total de todas las cuotas activas.
+    </div>
 </div>
-
-<div class="table-responsive">
-<table class="table table-bordered table-striped align-middle">
-    <thead class="table-dark">
-        <tr>
-            <th>Fecha</th>
-            <th>Descripción</th>
-            <th>Monto</th>
-            <th>Acciones</th>
-        </tr>
-    </thead>
-    <tbody>
-
-    {% for c in data %}
-        <tr>
-            <td>{{ c.fecha }}</td>
-            <td>{{ c.nombre }}</td>
-            <td>${{ c.monto }}</td>
-            <td>
-                <a
-                  href="/admin/cuota/{{ c.id }}"
-                  class="btn btn-primary btn-sm">
-                    Ver plantilla
-                </a>
-            </td>
-        </tr>
-    {% else %}
-        <tr>
-            <td colspan="4" class="text-center text-muted">
-                No hay cuotas creadas
-            </td>
-        </tr>
-    {% endfor %}
-
-    </tbody>
-</table>
-</div>
-
-<a href="/" class="btn btn-lg btn-secondary mt-3">
-    ⬅ Volver
-</a>
-
 </body>
 </html>
