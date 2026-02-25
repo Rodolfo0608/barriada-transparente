@@ -7,6 +7,7 @@ import io
 import psycopg2
 import psycopg2.extras
 import os
+import time
 from datetime import datetime, date
 from functools import wraps
 
@@ -47,7 +48,14 @@ def inject_session():
 # ==========================================================
 
 def get_conn():
-    return psycopg2.connect(DATABASE_URL, sslmode='require')
+    for intento in range(3):
+        try:
+            conn = psycopg2.connect(DATABASE_URL)
+            return conn
+        except psycopg2.OperationalError as e:
+            print(f"Error de conexión (intento {intento+1}/3): {e}")
+            time.sleep(2)
+    raise Exception("No se pudo conectar a la base de datos después de 3 intentos")
 
 
 def get_cursor():
@@ -124,7 +132,7 @@ def init_db():
     """)
     conn.commit()
 
-    # Add cuota_id column to pagos if it does not exist
+    # Agregar columna cuota_id a pagos si no existe
     try:
         cur.execute("ALTER TABLE pagos ADD COLUMN IF NOT EXISTS cuota_id INTEGER;")
         conn.commit()
@@ -146,8 +154,12 @@ def crear_admin_si_no_existe():
     conn.close()
 
 
-init_db()
-crear_admin_si_no_existe()
+try:
+    init_db()
+    crear_admin_si_no_existe()
+    print("Base de datos iniciada correctamente.")
+except Exception as e:
+    print(f"ADVERTENCIA: Error al iniciar BD: {e}")
 
 # ==========================================================
 # SEGURIDAD
@@ -649,6 +661,3 @@ def logout():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
-
-#if __name__ == '__main__':
-#    app.run(debug=True)
