@@ -6,6 +6,7 @@ from openpyxl import Workbook
 import io
 import psycopg2
 import psycopg2.extras
+from psycopg2 import pool
 import os
 import time
 from datetime import datetime, date
@@ -44,18 +45,64 @@ def inject_session():
     return dict(session=session)
 
 # ==========================================================
-# BASE DE DATOS (POSTGRESQL)
+# POOL DE CONEXIONES A POSTGRESQL
+# Reutiliza conexiones en lugar de abrir una nueva cada vez.
+# minconn=1, maxconn=5 es ideal para el plan gratuito de Supabase.
 # ==========================================================
 
+connection_pool = None
+
+def init_pool():
+    global connection_pool
+    for intento in range(5):
+        try:
+            connection_pool = pool.ThreadedConnectionPool(
+                minconn=1,
+                maxconn=5,
+                dsn=DATABASE_URL
+            )
+            print("Pool de conexiones creado correctamente.")
+            return
+        except Exception as e:
+            print(f"Error al crear pool (intento {intento+1}/5): {e}")
+            time.sleep(3)
+    print("ADVERTENCIA: No se pudo crear el pool de conexiones.")
+
+
 def get_conn():
+    global connection_pool
+    if connection_pool is None or connection_pool.closed:
+        init_pool()
     for intento in range(3):
         try:
-            conn = psycopg2.connect(DATABASE_URL)
+            conn = connection_pool.getconn()
+            # Verificar que la conexión sigue viva
+            conn.cursor().execute("SELECT 1")
             return conn
-        except psycopg2.OperationalError as e:
-            print(f"Error de conexión (intento {intento+1}/3): {e}")
-            time.sleep(2)
-    raise Exception("No se pudo conectar a la base de datos después de 3 intentos")
+        except Exception as e:
+            print(f"Conexión del pool inválida (intento {intento+1}/3): {e}")
+            try:
+                connection_pool.putconn(conn, close=True)
+            except Exception:
+                pass
+            time.sleep(1)
+    raise Exception("No se pudo obtener una conexión válida del pool")
+
+
+def release_conn(conn):
+    """Devuelve la conexión al pool en lugar de cerrarla."""
+    global connection_pool
+    try:
+        if connection_pool and not connection_pool.closed:
+            connection_pool.putconn(conn)
+        else:
+            conn.close()
+    except Exception as e:
+        print(f"Error al liberar conexión: {e}")
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def get_cursor():
@@ -63,103 +110,112 @@ def get_cursor():
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     return cur, conn
 
+# ==========================================================
+# BASE DE DATOS – INICIALIZACIÓN DE TABLAS
+# ==========================================================
 
 def init_db():
     cur, conn = get_cursor()
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS minutas (
-        id SERIAL PRIMARY KEY,
-        titulo TEXT,
-        resumen TEXT,
-        archivo TEXT,
-        fecha DATE
-    );
-
-    CREATE TABLE IF NOT EXISTS requerimientos (
-        id SERIAL PRIMARY KEY,
-        descripcion TEXT,
-        prioridad INTEGER,
-        estado TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS comite (
-        id SERIAL PRIMARY KEY,
-        nombre TEXT,
-        cargo TEXT,
-        casa TEXT,
-        foto TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS sugerencias (
-        id SERIAL PRIMARY KEY,
-        texto TEXT,
-        fecha TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS pagos (
-        id SERIAL PRIMARY KEY,
-        casa TEXT,
-        monto NUMERIC,
-        fecha DATE,
-        comprobante TEXT,
-        notas TEXT,
-        cuota_id INTEGER
-    );
-
-    CREATE TABLE IF NOT EXISTS gastos (
-        id SERIAL PRIMARY KEY,
-        descripcion TEXT,
-        monto NUMERIC,
-        fecha DATE,
-        factura TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS usuarios (
-        id SERIAL PRIMARY KEY,
-        usuario TEXT UNIQUE,
-        password TEXT,
-        rol TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS cuotas (
-        id SERIAL PRIMARY KEY,
-        descripcion TEXT NOT NULL,
-        monto NUMERIC NOT NULL,
-        fecha_vencimiento DATE NOT NULL,
-        tipo TEXT DEFAULT 'mensual',
-        activa BOOLEAN DEFAULT TRUE
-    );
-    """)
-    conn.commit()
-
-    # Agregar columna cuota_id a pagos si no existe
     try:
-        cur.execute("ALTER TABLE pagos ADD COLUMN IF NOT EXISTS cuota_id INTEGER;")
-        conn.commit()
-    except Exception:
-        conn.rollback()
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS minutas (
+            id SERIAL PRIMARY KEY,
+            titulo TEXT,
+            resumen TEXT,
+            archivo TEXT,
+            fecha DATE
+        );
 
-    conn.close()
+        CREATE TABLE IF NOT EXISTS requerimientos (
+            id SERIAL PRIMARY KEY,
+            descripcion TEXT,
+            prioridad INTEGER,
+            estado TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS comite (
+            id SERIAL PRIMARY KEY,
+            nombre TEXT,
+            cargo TEXT,
+            casa TEXT,
+            foto TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS sugerencias (
+            id SERIAL PRIMARY KEY,
+            texto TEXT,
+            fecha TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS pagos (
+            id SERIAL PRIMARY KEY,
+            casa TEXT,
+            monto NUMERIC,
+            fecha DATE,
+            comprobante TEXT,
+            notas TEXT,
+            cuota_id INTEGER
+        );
+
+        CREATE TABLE IF NOT EXISTS gastos (
+            id SERIAL PRIMARY KEY,
+            descripcion TEXT,
+            monto NUMERIC,
+            fecha DATE,
+            factura TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS usuarios (
+            id SERIAL PRIMARY KEY,
+            usuario TEXT UNIQUE,
+            password TEXT,
+            rol TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS cuotas (
+            id SERIAL PRIMARY KEY,
+            descripcion TEXT NOT NULL,
+            monto NUMERIC NOT NULL,
+            fecha_vencimiento DATE NOT NULL,
+            tipo TEXT DEFAULT 'mensual',
+            activa BOOLEAN DEFAULT TRUE
+        );
+        """)
+        conn.commit()
+
+        # Agregar columna cuota_id a pagos si no existe
+        try:
+            cur.execute("ALTER TABLE pagos ADD COLUMN IF NOT EXISTS cuota_id INTEGER;")
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
+    finally:
+        release_conn(conn)
 
 
 def crear_admin_si_no_existe():
     cur, conn = get_cursor()
-    cur.execute("SELECT 1 FROM usuarios WHERE rol='admin'")
-    if not cur.fetchone():
-        cur.execute(
-            "INSERT INTO usuarios (usuario, password, rol) VALUES (%s, %s, %s)",
-            ("admin", "admin123", "admin")
-        )
-        conn.commit()
-    conn.close()
+    try:
+        cur.execute("SELECT 1 FROM usuarios WHERE rol='admin'")
+        if not cur.fetchone():
+            cur.execute(
+                "INSERT INTO usuarios (usuario, password, rol) VALUES (%s, %s, %s)",
+                ("admin", "admin123", "admin")
+            )
+            conn.commit()
+    finally:
+        release_conn(conn)
 
 
+# Inicializar pool y BD al arrancar
 try:
+    init_pool()
     init_db()
     crear_admin_si_no_existe()
-    print("Base de datos iniciada correctamente.")
+    print("Aplicación iniciada correctamente.")
 except Exception as e:
-    print(f"ADVERTENCIA: Error al iniciar BD: {e}")
+    print(f"ADVERTENCIA: Error al iniciar la aplicación: {e}")
 
 # ==========================================================
 # SEGURIDAD
@@ -185,50 +241,48 @@ def index():
 @app.route('/minutas')
 def minutas():
     cur, conn = get_cursor()
-    cur.execute("SELECT * FROM minutas ORDER BY fecha DESC")
-    data = cur.fetchall()
-    conn.close()
+    try:
+        cur.execute("SELECT * FROM minutas ORDER BY fecha DESC")
+        data = cur.fetchall()
+    finally:
+        release_conn(conn)
     return render_template('minutas.html', data=data)
 
 
 @app.route('/estado-cuenta')
 def estado_cuenta():
     cur, conn = get_cursor()
+    try:
+        cur.execute("SELECT COALESCE(SUM(monto),0) AS total FROM pagos")
+        ingresos = cur.fetchone()['total']
 
-    # INGRESOS TOTALES
-    cur.execute("SELECT COALESCE(SUM(monto),0) AS total FROM pagos")
-    ingresos = cur.fetchone()['total']
+        cur.execute("SELECT * FROM gastos ORDER BY fecha DESC")
+        gastos = cur.fetchall()
 
-    # GASTOS
-    cur.execute("SELECT * FROM gastos ORDER BY fecha DESC")
-    gastos = cur.fetchall()
+        cur.execute("SELECT COALESCE(SUM(monto),0) AS total FROM gastos")
+        egresos = cur.fetchone()['total']
 
-    cur.execute("SELECT COALESCE(SUM(monto),0) AS total FROM gastos")
-    egresos = cur.fetchone()['total']
+        cur.execute("SELECT * FROM cuotas WHERE activa=TRUE ORDER BY fecha_vencimiento DESC")
+        cuotas = cur.fetchall()
 
-    # CUOTAS ACTIVAS
-    cur.execute("SELECT * FROM cuotas WHERE activa=TRUE ORDER BY fecha_vencimiento DESC")
-    cuotas = cur.fetchall()
+        cur.execute("""
+            SELECT casa, COALESCE(SUM(monto),0) as total_pagado
+            FROM pagos GROUP BY casa
+        """)
+        pagos_por_casa_raw = cur.fetchall()
+        pagos_por_casa = {}
+        for r in pagos_por_casa_raw:
+            try:
+                key = int(r['casa'])
+            except (ValueError, TypeError):
+                key = r['casa']
+            pagos_por_casa[key] = float(r['total_pagado'])
 
-    # PAGOS TOTALES POR CASA
-    cur.execute("""
-        SELECT casa, COALESCE(SUM(monto),0) as total_pagado
-        FROM pagos GROUP BY casa
-    """)
-    pagos_por_casa_raw = cur.fetchall()
-    pagos_por_casa = {}
-    for r in pagos_por_casa_raw:
-        try:
-            key = int(r['casa'])
-        except (ValueError, TypeError):
-            key = r['casa']
-        pagos_por_casa[key] = float(r['total_pagado'])
+        cur.execute("SELECT COALESCE(SUM(monto),0) as total FROM cuotas WHERE activa=TRUE")
+        total_cuotas = float(cur.fetchone()['total'] or 0)
 
-    # Total cuotas activas
-    cur.execute("SELECT COALESCE(SUM(monto),0) as total FROM cuotas WHERE activa=TRUE")
-    total_cuotas = float(cur.fetchone()['total'] or 0)
-
-    conn.close()
+    finally:
+        release_conn(conn)
 
     return render_template(
         'estado_cuenta.html',
@@ -244,54 +298,49 @@ def estado_cuenta():
 
 @app.route('/api/estado-casa/<int:numero_casa>')
 def api_estado_casa(numero_casa):
-    """API JSON: estado de cuenta de una casa específica"""
     cur, conn = get_cursor()
+    try:
+        casa_str = str(numero_casa)
 
-    casa_str = str(numero_casa)
+        cur.execute("""
+            SELECT p.id, p.casa, p.monto, p.fecha, p.notas, p.comprobante,
+                   c.descripcion as cuota_desc
+            FROM pagos p
+            LEFT JOIN cuotas c ON p.cuota_id = c.id
+            WHERE p.casa = %s
+            ORDER BY p.fecha DESC
+        """, (casa_str,))
+        pagos = []
+        for r in cur.fetchall():
+            row = dict(r)
+            if row.get('fecha'):
+                row['fecha'] = str(row['fecha'])
+            row['monto'] = float(row['monto'])
+            pagos.append(row)
 
-    # Pagos de esta casa
-    cur.execute("""
-        SELECT p.id, p.casa, p.monto, p.fecha, p.notas, p.comprobante,
-               c.descripcion as cuota_desc
-        FROM pagos p
-        LEFT JOIN cuotas c ON p.cuota_id = c.id
-        WHERE p.casa = %s
-        ORDER BY p.fecha DESC
-    """, (casa_str,))
-    pagos = []
-    for r in cur.fetchall():
-        row = dict(r)
-        if row.get('fecha'):
-            row['fecha'] = str(row['fecha'])
-        row['monto'] = float(row['monto'])
-        pagos.append(row)
+        cur.execute("SELECT COALESCE(SUM(monto),0) as total FROM pagos WHERE casa=%s", (casa_str,))
+        total_pagado = float(cur.fetchone()['total'])
 
-    # Total pagado
-    cur.execute("SELECT COALESCE(SUM(monto),0) as total FROM pagos WHERE casa=%s", (casa_str,))
-    total_pagado = float(cur.fetchone()['total'])
+        cur.execute("SELECT * FROM cuotas WHERE activa=TRUE ORDER BY fecha_vencimiento")
+        cuotas_activas = []
+        for r in cur.fetchall():
+            row = dict(r)
+            if row.get('fecha_vencimiento'):
+                row['fecha_vencimiento'] = str(row['fecha_vencimiento'])
+            row['monto'] = float(row['monto'])
+            cuotas_activas.append(row)
 
-    # Cuotas activas
-    cur.execute("SELECT * FROM cuotas WHERE activa=TRUE ORDER BY fecha_vencimiento")
-    cuotas_activas = []
-    for r in cur.fetchall():
-        row = dict(r)
-        if row.get('fecha_vencimiento'):
-            row['fecha_vencimiento'] = str(row['fecha_vencimiento'])
-        row['monto'] = float(row['monto'])
-        cuotas_activas.append(row)
+        total_cuotas = sum(c['monto'] for c in cuotas_activas)
 
-    total_cuotas = sum(c['monto'] for c in cuotas_activas)
+        cur.execute(
+            "SELECT DISTINCT cuota_id FROM pagos WHERE casa=%s AND cuota_id IS NOT NULL",
+            (casa_str,)
+        )
+        cuotas_pagadas_ids = {r['cuota_id'] for r in cur.fetchall()}
+        cuotas_pendientes = [c for c in cuotas_activas if c['id'] not in cuotas_pagadas_ids]
 
-    # Cuotas pagadas (por cuota_id)
-    cur.execute(
-        "SELECT DISTINCT cuota_id FROM pagos WHERE casa=%s AND cuota_id IS NOT NULL",
-        (casa_str,)
-    )
-    cuotas_pagadas_ids = {r['cuota_id'] for r in cur.fetchall()}
-
-    cuotas_pendientes = [c for c in cuotas_activas if c['id'] not in cuotas_pagadas_ids]
-
-    conn.close()
+    finally:
+        release_conn(conn)
 
     return jsonify({
         'casa': numero_casa,
@@ -306,65 +355,71 @@ def api_estado_casa(numero_casa):
 @app.route('/comite')
 def comite():
     cur, conn = get_cursor()
-    cur.execute("SELECT * FROM comite")
-    data = cur.fetchall()
-    conn.close()
+    try:
+        cur.execute("SELECT * FROM comite")
+        data = cur.fetchall()
+    finally:
+        release_conn(conn)
     return render_template('comite.html', data=data)
 
 
 @app.route('/requerimientos')
 def requerimientos():
     cur, conn = get_cursor()
-    cur.execute("SELECT * FROM requerimientos ORDER BY prioridad")
-    data = cur.fetchall()
-    conn.close()
+    try:
+        cur.execute("SELECT * FROM requerimientos ORDER BY prioridad")
+        data = cur.fetchall()
+    finally:
+        release_conn(conn)
     return render_template('requerimientos.html', data=data)
 
 
 @app.route('/sugerencias', methods=['GET', 'POST'])
 def sugerencias():
-    cur, conn = get_cursor()
-
     if request.method == 'POST':
         texto = request.form.get('texto')
         if texto:
-            cur.execute(
-                "INSERT INTO sugerencias (texto, fecha) VALUES (%s, %s)",
-                (texto, datetime.now())
-            )
-            conn.commit()
-        conn.close()
+            cur, conn = get_cursor()
+            try:
+                cur.execute(
+                    "INSERT INTO sugerencias (texto, fecha) VALUES (%s, %s)",
+                    (texto, datetime.now())
+                )
+                conn.commit()
+            finally:
+                release_conn(conn)
         return redirect('/sugerencias')
 
-    cur.execute("SELECT * FROM sugerencias ORDER BY fecha DESC")
-    data = cur.fetchall()
-    conn.close()
-
+    cur, conn = get_cursor()
+    try:
+        cur.execute("SELECT * FROM sugerencias ORDER BY fecha DESC")
+        data = cur.fetchall()
+    finally:
+        release_conn(conn)
     return render_template('sugerencias.html', data=data)
 
 
 @app.route('/estado-cuenta/excel')
 def estado_cuenta_excel():
     cur, conn = get_cursor()
-
-    cur.execute("SELECT * FROM pagos ORDER BY fecha DESC")
-    pagos = cur.fetchall()
-    cur.execute("SELECT * FROM gastos ORDER BY fecha DESC")
-    gastos = cur.fetchall()
-    conn.close()
+    try:
+        cur.execute("SELECT * FROM pagos ORDER BY fecha DESC")
+        pagos = cur.fetchall()
+        cur.execute("SELECT * FROM gastos ORDER BY fecha DESC")
+        gastos = cur.fetchall()
+    finally:
+        release_conn(conn)
 
     wb = Workbook()
     ws = wb.active
     ws.title = "Pagos"
     ws.append(["Casa", "Monto", "Fecha", "Notas", "Comprobante"])
-
     for p in pagos:
         ws.append([p['casa'], float(p['monto']), str(p['fecha']),
                    p['notas'] or "", p['comprobante'] or ""])
 
     ws2 = wb.create_sheet("Gastos")
     ws2.append(["Descripción", "Monto", "Fecha", "Factura"])
-
     for g in gastos:
         ws2.append([g['descripcion'], float(g['monto']), str(g['fecha']),
                     g['factura'] or ""])
@@ -402,22 +457,25 @@ def admin_pago():
             url = result["secure_url"]
 
         cur, conn = get_cursor()
-        cur.execute("""
-            INSERT INTO pagos (casa, monto, fecha, comprobante, notas, cuota_id)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        """, (casa, monto, datetime.now().date(), url,
-              request.form.get('notas'), cuota_id))
-        conn.commit()
-        conn.close()
-
+        try:
+            cur.execute("""
+                INSERT INTO pagos (casa, monto, fecha, comprobante, notas, cuota_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (casa, monto, datetime.now().date(), url,
+                  request.form.get('notas'), cuota_id))
+            conn.commit()
+        finally:
+            release_conn(conn)
         return redirect('/estado-cuenta')
 
     cur, conn = get_cursor()
-    cur.execute("SELECT * FROM pagos ORDER BY fecha DESC")
-    pagos = cur.fetchall()
-    cur.execute("SELECT * FROM cuotas WHERE activa=TRUE ORDER BY fecha_vencimiento")
-    cuotas = cur.fetchall()
-    conn.close()
+    try:
+        cur.execute("SELECT * FROM pagos ORDER BY fecha DESC")
+        pagos = cur.fetchall()
+        cur.execute("SELECT * FROM cuotas WHERE activa=TRUE ORDER BY fecha_vencimiento")
+        cuotas = cur.fetchall()
+    finally:
+        release_conn(conn)
     return render_template('admin_pago.html', pagos=pagos, cuotas=cuotas)
 
 
@@ -442,19 +500,22 @@ def admin_minuta():
             )["secure_url"]
 
         cur, conn = get_cursor()
-        cur.execute("""
-            INSERT INTO minutas (titulo, resumen, archivo, fecha)
-            VALUES (%s, %s, %s, %s)
-        """, (titulo, resumen, url, datetime.now().date()))
-        conn.commit()
-        conn.close()
-
+        try:
+            cur.execute("""
+                INSERT INTO minutas (titulo, resumen, archivo, fecha)
+                VALUES (%s, %s, %s, %s)
+            """, (titulo, resumen, url, datetime.now().date()))
+            conn.commit()
+        finally:
+            release_conn(conn)
         return redirect('/minutas')
 
     cur, conn = get_cursor()
-    cur.execute("SELECT * FROM minutas ORDER BY fecha DESC")
-    minutas_list = cur.fetchall()
-    conn.close()
+    try:
+        cur.execute("SELECT * FROM minutas ORDER BY fecha DESC")
+        minutas_list = cur.fetchall()
+    finally:
+        release_conn(conn)
     return render_template('admin_minuta.html', minutas=minutas_list)
 
 
@@ -479,19 +540,22 @@ def admin_gasto():
             )["secure_url"]
 
         cur, conn = get_cursor()
-        cur.execute("""
-            INSERT INTO gastos (descripcion, monto, fecha, factura)
-            VALUES (%s, %s, %s, %s)
-        """, (descripcion, monto, datetime.now().date(), url))
-        conn.commit()
-        conn.close()
-
+        try:
+            cur.execute("""
+                INSERT INTO gastos (descripcion, monto, fecha, factura)
+                VALUES (%s, %s, %s, %s)
+            """, (descripcion, monto, datetime.now().date(), url))
+            conn.commit()
+        finally:
+            release_conn(conn)
         return redirect('/estado-cuenta')
 
     cur, conn = get_cursor()
-    cur.execute("SELECT * FROM gastos ORDER BY fecha DESC")
-    gastos = cur.fetchall()
-    conn.close()
+    try:
+        cur.execute("SELECT * FROM gastos ORDER BY fecha DESC")
+        gastos = cur.fetchall()
+    finally:
+        release_conn(conn)
     return render_template('admin_gasto.html', gastos=gastos)
 
 
@@ -517,19 +581,22 @@ def admin_comite():
             )["secure_url"]
 
         cur, conn = get_cursor()
-        cur.execute("""
-            INSERT INTO comite (nombre, cargo, casa, foto)
-            VALUES (%s, %s, %s, %s)
-        """, (nombre, cargo, casa, url))
-        conn.commit()
-        conn.close()
-
+        try:
+            cur.execute("""
+                INSERT INTO comite (nombre, cargo, casa, foto)
+                VALUES (%s, %s, %s, %s)
+            """, (nombre, cargo, casa, url))
+            conn.commit()
+        finally:
+            release_conn(conn)
         return redirect('/comite')
 
     cur, conn = get_cursor()
-    cur.execute("SELECT * FROM comite ORDER BY nombre")
-    miembros = cur.fetchall()
-    conn.close()
+    try:
+        cur.execute("SELECT * FROM comite ORDER BY nombre")
+        miembros = cur.fetchall()
+    finally:
+        release_conn(conn)
     return render_template('admin_comite.html', miembros=miembros)
 
 
@@ -540,25 +607,29 @@ def admin_comite():
 @app.route('/admin/cuotas', methods=['GET', 'POST'])
 @admin_required
 def admin_cuotas():
-    cur, conn = get_cursor()
-
     if request.method == 'POST':
         descripcion = request.form['descripcion']
         monto = request.form['monto']
         fecha_vencimiento = request.form['fecha_vencimiento']
         tipo = request.form.get('tipo', 'mensual')
 
-        cur.execute("""
-            INSERT INTO cuotas (descripcion, monto, fecha_vencimiento, tipo, activa)
-            VALUES (%s, %s, %s, %s, TRUE)
-        """, (descripcion, monto, fecha_vencimiento, tipo))
-        conn.commit()
-        conn.close()
+        cur, conn = get_cursor()
+        try:
+            cur.execute("""
+                INSERT INTO cuotas (descripcion, monto, fecha_vencimiento, tipo, activa)
+                VALUES (%s, %s, %s, %s, TRUE)
+            """, (descripcion, monto, fecha_vencimiento, tipo))
+            conn.commit()
+        finally:
+            release_conn(conn)
         return redirect('/admin/cuotas')
 
-    cur.execute("SELECT * FROM cuotas ORDER BY fecha_vencimiento DESC")
-    cuotas = cur.fetchall()
-    conn.close()
+    cur, conn = get_cursor()
+    try:
+        cur.execute("SELECT * FROM cuotas ORDER BY fecha_vencimiento DESC")
+        cuotas = cur.fetchall()
+    finally:
+        release_conn(conn)
     return render_template('admin_cuotas.html', cuotas=cuotas)
 
 
@@ -570,9 +641,11 @@ def admin_cuotas():
 @admin_required
 def delete_pago(id):
     cur, conn = get_cursor()
-    cur.execute("DELETE FROM pagos WHERE id=%s", (id,))
-    conn.commit()
-    conn.close()
+    try:
+        cur.execute("DELETE FROM pagos WHERE id=%s", (id,))
+        conn.commit()
+    finally:
+        release_conn(conn)
     return redirect('/admin/pago')
 
 
@@ -580,9 +653,11 @@ def delete_pago(id):
 @admin_required
 def delete_minuta(id):
     cur, conn = get_cursor()
-    cur.execute("DELETE FROM minutas WHERE id=%s", (id,))
-    conn.commit()
-    conn.close()
+    try:
+        cur.execute("DELETE FROM minutas WHERE id=%s", (id,))
+        conn.commit()
+    finally:
+        release_conn(conn)
     return redirect('/admin/minuta')
 
 
@@ -590,9 +665,11 @@ def delete_minuta(id):
 @admin_required
 def delete_gasto(id):
     cur, conn = get_cursor()
-    cur.execute("DELETE FROM gastos WHERE id=%s", (id,))
-    conn.commit()
-    conn.close()
+    try:
+        cur.execute("DELETE FROM gastos WHERE id=%s", (id,))
+        conn.commit()
+    finally:
+        release_conn(conn)
     return redirect('/admin/gasto')
 
 
@@ -600,9 +677,11 @@ def delete_gasto(id):
 @admin_required
 def delete_comite(id):
     cur, conn = get_cursor()
-    cur.execute("DELETE FROM comite WHERE id=%s", (id,))
-    conn.commit()
-    conn.close()
+    try:
+        cur.execute("DELETE FROM comite WHERE id=%s", (id,))
+        conn.commit()
+    finally:
+        release_conn(conn)
     return redirect('/admin/comite')
 
 
@@ -610,9 +689,11 @@ def delete_comite(id):
 @admin_required
 def delete_requerimiento(id):
     cur, conn = get_cursor()
-    cur.execute("DELETE FROM requerimientos WHERE id=%s", (id,))
-    conn.commit()
-    conn.close()
+    try:
+        cur.execute("DELETE FROM requerimientos WHERE id=%s", (id,))
+        conn.commit()
+    finally:
+        release_conn(conn)
     return redirect('/requerimientos')
 
 
@@ -620,9 +701,11 @@ def delete_requerimiento(id):
 @admin_required
 def delete_cuota(id):
     cur, conn = get_cursor()
-    cur.execute("DELETE FROM cuotas WHERE id=%s", (id,))
-    conn.commit()
-    conn.close()
+    try:
+        cur.execute("DELETE FROM cuotas WHERE id=%s", (id,))
+        conn.commit()
+    finally:
+        release_conn(conn)
     return redirect('/admin/cuotas')
 
 
@@ -635,12 +718,14 @@ def login():
     error = None
     if request.method == 'POST':
         cur, conn = get_cursor()
-        cur.execute(
-            "SELECT * FROM usuarios WHERE usuario=%s AND password=%s",
-            (request.form['usuario'], request.form['password'])
-        )
-        u = cur.fetchone()
-        conn.close()
+        try:
+            cur.execute(
+                "SELECT * FROM usuarios WHERE usuario=%s AND password=%s",
+                (request.form['usuario'], request.form['password'])
+            )
+            u = cur.fetchone()
+        finally:
+            release_conn(conn)
 
         if u:
             session['usuario'] = u['usuario']
