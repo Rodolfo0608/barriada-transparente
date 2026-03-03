@@ -9,12 +9,10 @@ import psycopg2.extras
 from psycopg2 import pool
 import os
 import time
-from datetime import datetime, date
+import uuid
+from datetime import datetime
 from functools import wraps
-
-# Cloudinary
-import cloudinary
-import cloudinary.uploader
+from supabase import create_client
 
 # ==========================================================
 # CONFIGURACIÓN GENERAL
@@ -25,16 +23,11 @@ app.secret_key = 'barriada-segura'
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-# ==========================================================
-# CLOUDINARY CONFIG
-# ==========================================================
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+SUPABASE_BUCKET = os.environ.get("SUPABASE_BUCKET")
 
-cloudinary.config(
-    cloud_name=os.environ.get("CLOUDINARY_CLOUD_NAME"),
-    api_key=os.environ.get("CLOUDINARY_API_KEY"),
-    api_secret=os.environ.get("CLOUDINARY_API_SECRET"),
-    secure=True
-)
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # ==========================================================
 # CONTEXTO GLOBAL PARA TEMPLATES
@@ -46,8 +39,6 @@ def inject_session():
 
 # ==========================================================
 # POOL DE CONEXIONES A POSTGRESQL
-# Reutiliza conexiones en lugar de abrir una nueva cada vez.
-# minconn=1, maxconn=5 es ideal para el plan gratuito de Supabase.
 # ==========================================================
 
 connection_pool = None
@@ -76,7 +67,6 @@ def get_conn():
     for intento in range(3):
         try:
             conn = connection_pool.getconn()
-            # Verificar que la conexión sigue viva
             conn.cursor().execute("SELECT 1")
             return conn
         except Exception as e:
@@ -90,7 +80,6 @@ def get_conn():
 
 
 def release_conn(conn):
-    """Devuelve la conexión al pool en lugar de cerrarla."""
     global connection_pool
     try:
         if connection_pool and not connection_pool.closed:
@@ -111,7 +100,25 @@ def get_cursor():
     return cur, conn
 
 # ==========================================================
-# BASE DE DATOS – INICIALIZACIÓN DE TABLAS
+# SUPABASE STORAGE
+# ==========================================================
+
+def subir_a_supabase(file, carpeta):
+    ext = file.filename.rsplit('.', 1)[-1].lower()
+    nombre = f"{carpeta}/{uuid.uuid4()}.{ext}"
+    contenido = file.read()
+    supabase.storage.from_(SUPABASE_BUCKET).upload(
+        nombre,
+        contenido,
+        file_options={
+            "content-type": file.mimetype,
+            "upsert": False
+        }
+    )
+    return supabase.storage.from_(SUPABASE_BUCKET).get_public_url(nombre)
+
+# ==========================================================
+# BASE DE DATOS – INICIALIZACIÓN
 # ==========================================================
 
 def init_db():
@@ -183,12 +190,13 @@ def init_db():
         """)
         conn.commit()
 
-        # Agregar columna cuota_id a pagos si no existe
-        try:
-            cur.execute("ALTER TABLE pagos ADD COLUMN IF NOT EXISTS cuota_id INTEGER;")
-            conn.commit()
-        except Exception:
-            conn.rollback()
+        # Columnas opcionales por si la tabla pagos ya existía sin ellas
+        for col, tipo in [("notas", "TEXT"), ("cuota_id", "INTEGER")]:
+            try:
+                cur.execute(f"ALTER TABLE pagos ADD COLUMN IF NOT EXISTS {col} {tipo};")
+                conn.commit()
+            except Exception:
+                conn.rollback()
 
     finally:
         release_conn(conn)
@@ -208,7 +216,6 @@ def crear_admin_si_no_existe():
         release_conn(conn)
 
 
-# Inicializar pool y BD al arrancar
 try:
     init_pool()
     init_db()
@@ -449,12 +456,7 @@ def admin_pago():
 
         url = None
         if archivo and archivo.filename:
-            result = cloudinary.uploader.upload(
-                archivo,
-                resource_type="auto",
-                folder="barriada/pagos"
-            )
-            url = result["secure_url"]
+            url = subir_a_supabase(archivo, "pagos")
 
         cur, conn = get_cursor()
         try:
@@ -493,11 +495,7 @@ def admin_minuta():
 
         url = None
         if archivo and archivo.filename:
-            url = cloudinary.uploader.upload(
-                archivo,
-                resource_type="auto",
-                folder="barriada/minutas"
-            )["secure_url"]
+            url = subir_a_supabase(archivo, "minutas")
 
         cur, conn = get_cursor()
         try:
@@ -533,11 +531,7 @@ def admin_gasto():
 
         url = None
         if archivo and archivo.filename:
-            url = cloudinary.uploader.upload(
-                archivo,
-                resource_type="auto",
-                folder="barriada/gastos"
-            )["secure_url"]
+            url = subir_a_supabase(archivo, "gastos")
 
         cur, conn = get_cursor()
         try:
@@ -574,11 +568,7 @@ def admin_comite():
 
         url = None
         if archivo and archivo.filename:
-            url = cloudinary.uploader.upload(
-                archivo,
-                resource_type="image",
-                folder="barriada/comite"
-            )["secure_url"]
+            url = subir_a_supabase(archivo, "comite")
 
         cur, conn = get_cursor()
         try:
